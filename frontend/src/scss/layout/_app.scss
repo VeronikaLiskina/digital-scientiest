@@ -1,0 +1,18 @@
+@use "../abstracts/variables" as *;
+
+.app {
+  min-height: 100vh;
+  background: radial-gradient(circle at 20% 15%, rgba(47, 92, 255, 0.04), transparent 28%), $bg;
+
+  &__topbar {
+    margin: 4px;
+  }
+
+  &__main {
+    padding: $container-padding-desktop-top $container-padding-desktop-x 40px;
+
+    @media (max-width: $breakpoint-tablet) {
+      padding: $container-padding-mobile-top $container-padding-mobile-x 32px;
+    }
+  }
+}

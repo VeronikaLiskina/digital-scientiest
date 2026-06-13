@@ -1,0 +1,24 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.pdf-upload {
+  padding: 18px;
+  border: 1px dashed #b7c7e2;
+  border-radius: 18px;
+  background: #f9fbff;
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  &__label {
+    font-weight: 600;
+    color: $text-soft;
+  }
+
+  &__input {
+    @include control;
+  }
+}

@@ -1,0 +1,26 @@
+@use "../abstracts/variables" as *;
+
+.document-chunks {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+
+  &__item {
+    padding: 16px;
+    border: 1px solid #e6edf7;
+    border-radius: 16px;
+    background: #f9fbff;
+  }
+
+  &__title {
+    margin-bottom: 8px;
+    font-weight: 700;
+    color: $text-soft;
+  }
+
+  &__text {
+    margin: 0;
+    white-space: pre-wrap;
+    line-height: 1.5;
+  }
+}

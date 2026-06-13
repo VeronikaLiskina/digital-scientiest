@@ -1,0 +1,39 @@
+import React from "react";
+import ReactDOM from "react-dom/client";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
+
+import { AppLayout } from "./components/layout/AppLayout";
+import { AuthorsPage } from "./pages/AuthorsPage";
+import { FilesPage } from "./pages/FilesPage";
+import { HomePage } from "./pages/HomePage";
+import { KeywordsPage } from "./pages/KeywordsPage";
+import { ProcessingLogsPage } from "./pages/ProcessingLogsPage";
+import { PublicationCreatePage } from "./pages/PublicationCreatePage";
+import { PublicationDetailsPage } from "./pages/PublicationDetailsPage";
+import { PublicationsPage } from "./pages/PublicationsPage";
+import { TopicsPage } from "./pages/TopicsPage";
+import "./scss/main.scss";
+
+const router = createBrowserRouter([
+  {
+    path: "/",
+    element: <AppLayout />,
+    children: [
+      { index: true, element: <HomePage /> },
+      { path: "publications", element: <PublicationsPage /> },
+      { path: "publications/new", element: <PublicationCreatePage /> },
+      { path: "publications/:publicationId", element: <PublicationDetailsPage /> },
+      { path: "files", element: <FilesPage /> },
+      { path: "authors", element: <AuthorsPage /> },
+      { path: "topics", element: <TopicsPage /> },
+      { path: "keywords", element: <KeywordsPage /> },
+      { path: "processing-logs", element: <ProcessingLogsPage /> },
+    ],
+  },
+]);
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <RouterProvider router={router} />
+  </React.StrictMode>,
+);

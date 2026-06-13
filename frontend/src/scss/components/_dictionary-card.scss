@@ -1,0 +1,42 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.dictionary-card {
+  width: 100%;
+  min-height: 76px;
+  padding: 18px 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+
+  @include card-surface;
+
+  h3 {
+    margin: 0 0 8px;
+    font-size: 20px;
+    color: $text;
+  }
+
+  p {
+    margin: 0;
+    color: $muted;
+    line-height: 1.4;
+  }
+
+  &__content {
+    min-width: 0;
+  }
+
+  &__actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  @include respond-tablet {
+    flex-direction: column;
+  }
+}

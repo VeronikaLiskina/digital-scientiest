@@ -1,0 +1,65 @@
+@use "../abstracts/mixins" as *;
+@use "../abstracts/variables" as *;
+
+.dictionary-page {
+  width: 100%;
+}
+
+.dictionary-page__content {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.dictionary-page__form-card {
+  width: 100%;
+  max-width: none;
+
+  h2 {
+    margin: 0 0 18px;
+    color: $text;
+  }
+}
+
+.dictionary-page__list-section {
+  width: 100%;
+  max-width: none;
+}
+
+.dictionary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  max-width: none;
+}
+
+.dictionary-page__show-more {
+  margin-top: 16px;
+}
+
+.list-title {
+  margin: 0 0 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 24px;
+  color: $text;
+
+  &__count {
+    min-width: 30px;
+    height: 30px;
+    padding: 0 10px;
+    border-radius: 999px;
+    background: $surface;
+    border: 1px solid $border;
+    color: $text;
+    box-shadow: 0 4px 16px rgba(31, 50, 88, 0.04);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 750;
+  }
+}

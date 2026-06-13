@@ -1,0 +1,49 @@
+@use "../abstracts/variables" as *;
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: fit-content;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 14px;
+  background: $primary;
+  color: white;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background $transition,
+    opacity $transition,
+    transform $transition;
+
+  &:hover {
+    background: $primary-dark;
+    transform: translateY(-1px);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+    transform: none;
+  }
+
+  &_secondary {
+    background: #eef3fb;
+    color: #1c2e57;
+
+    &:hover {
+      background: #e3ebf8;
+    }
+  }
+
+  &_danger {
+    background: #fff0f0;
+    color: $error;
+
+    &:hover {
+      background: #ffe2e2;
+    }
+  }
+}

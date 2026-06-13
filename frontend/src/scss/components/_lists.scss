@@ -1,0 +1,48 @@
+@use "../abstracts/variables" as *;
+
+.file-list,
+.dictionary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.file-list {
+  &__item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+
+  &__title {
+    margin: 0 0 8px;
+    font-size: 22px;
+    color: $text;
+  }
+
+  &__meta {
+    margin: 0;
+    color: $muted;
+  }
+
+  @media (max-width: $breakpoint-tablet) {
+    &__item {
+      flex-direction: column;
+      align-items: stretch;
+    }
+  }
+}
+
+.dictionary-list {
+  &__title {
+    margin: 0 0 8px;
+    font-size: 22px;
+    color: $text;
+  }
+
+  &__subtitle {
+    margin: 0;
+    color: $muted;
+  }
+}

@@ -1,0 +1,101 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.topbar {
+  background: $surface;
+  border-bottom: 1px solid $border;
+  box-shadow: 0 2px 20px rgba(31, 50, 88, 0.04);
+}
+
+.topbar__container {
+  height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  @include respond-tablet {
+    height: 64px;
+  }
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  &__logo {
+    width: 50px;
+    height: 50px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, #4b77ff 0%, $primary 100%);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 10px 22px rgba(47, 92, 255, 0.22);
+
+    svg {
+      width: 30px;
+      height: 30px;
+    }
+
+    @include respond-tablet {
+      width: 44px;
+      height: 44px;
+    }
+  }
+
+  &__title {
+    font-size: 24px;
+    font-weight: 750;
+    color: #17284d;
+
+    @include respond-tablet {
+      font-size: 20px;
+    }
+  }
+}
+
+.profile-button {
+  height: 50px;
+  min-width: 172px;
+  padding: 0 16px;
+  border-radius: 28px;
+  border: 1px solid $border;
+  background: $surface;
+  color: #1d325f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(31, 50, 88, 0.03);
+
+  &__icon {
+    display: flex;
+
+    svg {
+      width: 24px;
+      height: 24px;
+    }
+  }
+
+  &__text {
+    font-weight: 650;
+  }
+
+  &__chevron {
+    color: $muted;
+  }
+
+  @include respond-tablet {
+    min-width: 54px;
+    padding-inline: 14px;
+
+    &__text,
+    &__chevron {
+      display: none;
+    }
+  }
+}

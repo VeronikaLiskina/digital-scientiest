@@ -1,0 +1,29 @@
+$bg: #f6f8fc;
+$surface: #ffffff;
+$border: #e7edf5;
+$text: #13254a;
+$text-soft: #1c2e57;
+$muted: #8392ad;
+
+$primary: #2f5cff;
+$primary-dark: #2448d8;
+$primary-soft: #eef3ff;
+
+$success: #15803d;
+$error: #b42318;
+$warning: #b7791f;
+
+$shadow: 0 8px 30px rgba(31, 50, 88, 0.06);
+$shadow-hover: 0 14px 36px rgba(31, 50, 88, 0.08);
+
+$radius-sm: 12px;
+$radius-md: 16px;
+$radius-lg: 24px;
+
+$transition: 0.18s ease;
+
+// Контейнер стал шире, чтобы интерфейс на ПК не выглядел слишком мелким.
+$container-max-width: 1360px;
+$container-padding-desktop: 56px;
+$container-padding-tablet: 36px;
+$container-padding-mobile: 20px;

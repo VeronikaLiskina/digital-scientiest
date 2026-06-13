@@ -1,0 +1,23 @@
+@use "../abstracts/variables" as *;
+
+.table-wrapper {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+
+  th,
+  td {
+    padding: 12px 10px;
+    border-bottom: 1px solid #e8eef6;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    color: #5e6f8d;
+    font-weight: 600;
+  }
+}

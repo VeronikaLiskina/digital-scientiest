@@ -1,0 +1,48 @@
+@use "./variables" as *;
+
+@mixin card-surface {
+  background: $surface;
+  border: 1px solid $border;
+  border-radius: $radius-lg;
+  box-shadow: $shadow;
+}
+
+@mixin hover-lift {
+  transition:
+    transform $transition,
+    box-shadow $transition,
+    border-color $transition;
+
+  &:hover {
+    transform: translateY(-2px);
+    box-shadow: $shadow-hover;
+    border-color: #dbe5f3;
+  }
+}
+
+@mixin page-title {
+  margin: 0;
+  font-size: 46px;
+  line-height: 1.05;
+  font-weight: 750;
+  color: $text;
+  letter-spacing: -0.03em;
+}
+
+@mixin respond-mobile {
+  @media (max-width: 640px) {
+    @content;
+  }
+}
+
+@mixin respond-tablet {
+  @media (max-width: 980px) {
+    @content;
+  }
+}
+
+@mixin respond-desktop-small {
+  @media (max-width: 1300px) {
+    @content;
+  }
+}

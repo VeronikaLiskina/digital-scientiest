@@ -1,0 +1,25 @@
+@use "../abstracts/mixins" as *;
+
+.publications-page__filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+
+  input,
+  select {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+.publication-create-page__file-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  align-items: stretch;
+
+  @include respond-tablet {
+    grid-template-columns: 1fr;
+  }
+}

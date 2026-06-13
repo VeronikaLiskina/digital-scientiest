@@ -1,0 +1,11 @@
+@use "../abstracts/mixins" as *;
+
+.card {
+  padding: 24px;
+
+  @include card-surface;
+
+  h2 {
+    margin-top: 0;
+  }
+}

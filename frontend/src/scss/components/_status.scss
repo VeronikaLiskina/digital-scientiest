@@ -1,0 +1,40 @@
+@use "../abstracts/variables" as *;
+
+.status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 600;
+
+  &_new,
+  &_draft,
+  &_pending {
+    background: #eef3fb;
+    color: #4f607d;
+  }
+
+  &_processed,
+  &_success {
+    background: #e9f8ef;
+    color: $success;
+  }
+
+  &_processing {
+    background: #eef3ff;
+    color: $primary;
+  }
+
+  &_error {
+    background: #fff0f0;
+    color: $error;
+  }
+
+  &_review {
+    background: #fff7e6;
+    color: $warning;
+  }
+}

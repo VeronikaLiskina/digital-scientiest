@@ -1,0 +1,25 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.home-page__header {
+  margin-bottom: 30px;
+}
+
+.home-page__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  gap: 28px;
+  align-items: stretch;
+
+  @include respond-desktop-small {
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+  }
+
+  @include respond-tablet {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  @include respond-mobile {
+    grid-template-columns: 1fr;
+  }
+}
