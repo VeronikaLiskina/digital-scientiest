@@ -67,10 +67,10 @@ export function PublicationsPage() {
         description="Список карточек научных публикаций."
         actions={
           <div className="form-actions">
-            <Link className="button button_secondary" to="/">
+            <Link className="button button_secondary" to="/admin">
               На главную
             </Link>
-            <Link className="button" to="/publications/new">
+            <Link className="button" to="/admin/publications/new">
               Добавить публикацию
             </Link>
           </div>
@@ -177,7 +177,7 @@ export function PublicationsPage() {
                   </td>
                   <td>
                     <div className="table-actions">
-                      <Link className="button button_secondary" to={`/publications/${publication.id}`}>
+                      <Link className="button button_secondary" to={`/admin/publications/${publication.id}`}>
                         Открыть
                       </Link>
                       <button

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 
 import { authorsApi } from "../api/authorsApi";
 import { keywordsApi } from "../api/keywordsApi";
@@ -9,7 +9,6 @@ import { sourceFilesApi } from "../api/sourceFilesApi";
 import { topicsApi } from "../api/topicsApi";
 import { MultiSelect } from "../components/common/MultiSelect";
 import { PageHeader } from "../components/common/PageHeader";
-import { PdfUpload } from "../components/files/PdfUpload";
 import type { Author, Keyword, SourceFile, Topic } from "../types/entities";
 import type { PublicationFormData } from "../types/forms";
 
@@ -26,38 +25,76 @@ const emptyForm: PublicationFormData = {
   keyword_ids: [],
 };
 
-export function PublicationCreatePage() {
+export function PublicationEditPage() {
+  const { publicationId } = useParams();
+  const id = Number(publicationId);
   const navigate = useNavigate();
+
+  const [formData, setFormData] = useState<PublicationFormData>(emptyForm);
 
   const [authors, setAuthors] = useState<Author[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
-  const [formData, setFormData] = useState<PublicationFormData>(emptyForm);
+
   const [error, setError] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
+    if (!id) return;
+
     Promise.all([
+      publicationsApi.getOne(id),
       authorsApi.getAll(),
       topicsApi.getAll(),
       keywordsApi.getAll(),
       sourceFilesApi.getAll(),
     ])
-      .then(([authorsData, topicsData, keywordsData, filesData]) => {
+      .then(([publication, authorsData, topicsData, keywordsData, filesData]) => {
         setAuthors(authorsData);
         setTopics(topicsData);
         setKeywords(keywordsData);
         setSourceFiles(filesData);
-      })
-      .catch(() => setError("Не удалось загрузить справочники"));
-  }, []);
 
-  function updateForm<K extends keyof PublicationFormData>(key: K, value: PublicationFormData[K]) {
-    setFormData((prev) => ({ ...prev, [key]: value }));
+        setFormData({
+          title: publication.title ?? "",
+          year: publication.year ? String(publication.year) : "",
+          language: publication.language ?? "ru",
+          publication_type: publication.publication_type ?? "article",
+          doi: publication.doi ?? "",
+          status: publication.status ?? "draft",
+          source_file_id: publication.source_file_id
+            ? String(publication.source_file_id)
+            : "",
+          author_ids: publication.authors.map((author) => author.id),
+          topic_ids: publication.topics.map((topic) => topic.id),
+          keyword_ids: publication.keywords.map((keyword) => keyword.id),
+        });
+      })
+      .catch((err) => {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Не удалось загрузить данные публикации",
+        );
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, [id]);
+
+  function updateForm<K extends keyof PublicationFormData>(
+    key: K,
+    value: PublicationFormData[K],
+  ) {
+    setFormData((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
   }
 
-  async function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!formData.title.trim()) {
@@ -69,23 +106,32 @@ export function PublicationCreatePage() {
       setIsSaving(true);
       setError("");
 
-      const created = await publicationsApi.create(formData);
-      navigate(`/admin/publications/${created.id}`);
+      await publicationsApi.update(id, formData);
+
+      navigate(`/admin/publications/${id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Не удалось создать публикацию");
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Не удалось сохранить изменения",
+      );
     } finally {
       setIsSaving(false);
     }
   }
 
+  if (isLoading) {
+    return <p className="muted">Загрузка...</p>;
+  }
+
   return (
-    <section className="publication-create-page">
+    <section className="publication-edit-page">
       <PageHeader
-        title="Добавить публикацию"
-        description="Загрузите PDF и заполните карточку публикации."
+        title="Редактировать публикацию"
+        description="Измените данные карточки публикации."
         actions={
-          <Link className="button button_secondary" to="/admin/publications">
-            К списку
+          <Link className="button button_secondary" to={`/admin/publications/${id}`}>
+            К карточке
           </Link>
         }
       />
@@ -94,29 +140,22 @@ export function PublicationCreatePage() {
 
       <section className="card page-section">
         <form className="form" onSubmit={handleSubmit}>
-          <div className="publication-create-page__file-block">
-            <PdfUpload
-              onUploaded={(file) => {
-                setSourceFiles((prev) => [file, ...prev]);
-                updateForm("source_file_id", String(file.id));
-              }}
-            />
-
-            <label className="source-file-select">
-              <span>Или выберите файл из уже загруженных</span>
-              <select
-                value={formData.source_file_id}
-                onChange={(event) => updateForm("source_file_id", event.target.value)}
-              >
-                <option value="">Без файла</option>
-                {sourceFiles.map((file) => (
-                  <option key={file.id} value={file.id}>
-                    {file.file_name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
+          <label>
+            Исходный файл
+            <select
+              value={formData.source_file_id}
+              onChange={(event) =>
+                updateForm("source_file_id", event.target.value)
+              }
+            >
+              <option value="">Без файла</option>
+              {sourceFiles.map((file) => (
+                <option key={file.id} value={file.id}>
+                  {file.file_name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <label>
             Название *
@@ -152,7 +191,9 @@ export function PublicationCreatePage() {
               Тип
               <select
                 value={formData.publication_type}
-                onChange={(event) => updateForm("publication_type", event.target.value)}
+                onChange={(event) =>
+                  updateForm("publication_type", event.target.value)
+                }
               >
                 <option value="article">Article</option>
                 <option value="conference">Conference</option>
@@ -186,30 +227,39 @@ export function PublicationCreatePage() {
           <MultiSelect
             label="Авторы"
             values={formData.author_ids}
-            options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
+            options={authors.map((author) => ({
+              id: author.id,
+              label: author.full_name,
+            }))}
             onChange={(values) => updateForm("author_ids", values)}
           />
 
           <MultiSelect
             label="Темы"
             values={formData.topic_ids}
-            options={topics.map((topic) => ({ id: topic.id, label: topic.name }))}
+            options={topics.map((topic) => ({
+              id: topic.id,
+              label: topic.name,
+            }))}
             onChange={(values) => updateForm("topic_ids", values)}
           />
 
           <MultiSelect
             label="Ключевые слова"
             values={formData.keyword_ids}
-            options={keywords.map((keyword) => ({ id: keyword.id, label: keyword.name }))}
+            options={keywords.map((keyword) => ({
+              id: keyword.id,
+              label: keyword.name,
+            }))}
             onChange={(values) => updateForm("keyword_ids", values)}
           />
 
           <div className="form-actions">
             <button className="button" type="submit" disabled={isSaving}>
-              {isSaving ? "Сохраняем..." : "Создать публикацию"}
+              {isSaving ? "Сохраняем..." : "Сохранить изменения"}
             </button>
 
-            <Link className="button button_secondary" to="/admin/publications">
+            <Link className="button button_secondary" to={`/admin/publications/${id}`}>
               Отмена
             </Link>
           </div>

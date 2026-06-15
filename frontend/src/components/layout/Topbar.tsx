@@ -2,11 +2,16 @@ import { Link } from "react-router-dom";
 
 import { BookIcon, UserIcon } from "../icons/AppIcons";
 
-export function Topbar() {
+interface TopbarProps {
+  role?: string;
+  homeTo?: string;
+}
+
+export function Topbar({ role = "Администратор", homeTo = "/" }: TopbarProps) {
   return (
     <header className="topbar">
       <div className="topbar__container container container_center">
-        <Link className="brand" to="/">
+        <Link className="brand" to={homeTo}>
           <span className="brand__logo">
             <BookIcon />
           </span>
@@ -17,7 +22,7 @@ export function Topbar() {
           <span className="profile-button__icon">
             <UserIcon />
           </span>
-          <span className="profile-button__text">Администратор</span>
+          <span className="profile-button__text">{role}</span>
           <span className="profile-button__chevron">⌄</span>
         </button>
       </div>

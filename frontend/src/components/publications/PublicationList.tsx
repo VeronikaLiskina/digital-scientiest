@@ -25,7 +25,7 @@ export function PublicationList({ publications }: Props) {
             </p>
           </div>
 
-          <Link className="button button_secondary" to={`/publications/${publication.id}`}>
+          <Link className="button button_secondary" to={`/admin/publications/${publication.id}`}>
             Открыть
           </Link>
         </article>

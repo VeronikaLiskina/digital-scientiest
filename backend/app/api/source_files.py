@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.db.database import get_db
 from app.models.source_file import SourceFile
 from app.schemas.source_file import SourceFileCreate, SourceFileRead, SourceFileUpdate
-
+from app.services.pdf_processing import process_pdf_file
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
 
@@ -118,6 +118,23 @@ async def download_source_file(
         filename=source_file.file_name,
     )
 
+@router.post("/{source_file_id}/process")
+async def process_source_file(
+    source_file_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await process_pdf_file(
+            db=db,
+            source_file_id=source_file_id,
+        )
+        return result
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )
 
 @router.patch("/{source_file_id}", response_model=SourceFileRead)
 async def update_source_file(

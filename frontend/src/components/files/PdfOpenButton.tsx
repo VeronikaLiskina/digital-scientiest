@@ -1,4 +1,4 @@
-import { getFileDownloadUrl } from '../../api/client';
+import { sourceFilesApi } from "../../api/sourceFilesApi";
 
 type Props = {
   sourceFileId?: number | null;
@@ -10,7 +10,12 @@ export function PdfOpenButton({ sourceFileId }: Props) {
   }
 
   return (
-    <a className="button button_secondary" href={getFileDownloadUrl(sourceFileId)} target="_blank" rel="noreferrer">
+    <a
+      className="button button_secondary"
+      href={sourceFilesApi.getDownloadUrl(sourceFileId)}
+      target="_blank"
+      rel="noreferrer"
+    >
       Открыть PDF
     </a>
   );

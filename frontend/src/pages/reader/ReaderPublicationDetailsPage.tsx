@@ -1,94 +1,67 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { documentChunksApi } from "../api/documentChunksApi";
-import { publicationsApi } from "../api/publicationsApi";
-import { sourceFilesApi } from "../api/sourceFilesApi";
-import { PageHeader } from "../components/common/PageHeader";
-import { StatusBadge } from "../components/common/StatusBadge";
-import type { DocumentChunk, Publication } from "../types/entities";
+import { documentChunksApi } from "../../api/documentChunksApi";
+import { publicationsApi } from "../../api/publicationsApi";
+import { sourceFilesApi } from "../../api/sourceFilesApi";
+import { PageHeader } from "../../components/common/PageHeader";
+import type { DocumentChunk, Publication } from "../../types/entities";
 
 function getChunkText(chunk: DocumentChunk) {
   return chunk.text ?? chunk.chunk_text ?? "";
 }
 
-export function PublicationDetailsPage() {
+export function ReaderPublicationDetailsPage() {
   const { publicationId } = useParams();
   const id = Number(publicationId);
 
   const [publication, setPublication] = useState<Publication | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
   const [error, setError] = useState("");
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!id) return;
+
+    setIsLoading(true);
 
     publicationsApi
       .getOne(id)
       .then((data) => {
         setPublication(data);
-
-        documentChunksApi
-          .getAll(data.id)
-          .then(setChunks)
-          .catch(() => setChunks([]));
+        return documentChunksApi.getAll(data.id);
       })
+      .then(setChunks)
       .catch((err) => {
         setError(
           err instanceof Error
             ? err.message
             : "Не удалось загрузить публикацию",
         );
+      })
+      .finally(() => {
+        setIsLoading(false);
       });
   }, [id]);
-
-  async function handleProcessPdf() {
-    if (!publication?.source_file_id) {
-      setProcessingMessage("К публикации не привязан PDF-файл.");
-      return;
-    }
-
-    try {
-      setIsProcessing(true);
-      setProcessingMessage("");
-
-      const result = await sourceFilesApi.process(publication.source_file_id);
-
-      const updatedChunks = await documentChunksApi.getAll(publication.id);
-      setChunks(updatedChunks);
-
-      setProcessingMessage(
-        `Обработка завершена. Создано фрагментов: ${result.chunks_created}`,
-      );
-    } catch (err) {
-      setProcessingMessage(
-        err instanceof Error ? err.message : "Не удалось обработать PDF.",
-      );
-    } finally {
-      setIsProcessing(false);
-    }
-  }
 
   if (error) {
     return <p className="error">{error}</p>;
   }
 
-  if (!publication) {
+  if (isLoading || !publication) {
     return <p className="muted">Загрузка...</p>;
   }
 
   return (
-    <section className="publication-details-page">
+    <section className="reader-publication-details-page">
       <PageHeader
         title={publication.title}
-        description="Карточка публикации, исходный PDF и текстовые фрагменты."
+        description="Карточка публикации для просмотра."
         actions={
           <div className="form-actions">
             {publication.source_file_id && (
               <a
-                className="button button_secondary"
+                className="button"
                 href={sourceFilesApi.getDownloadUrl(publication.source_file_id)}
                 target="_blank"
                 rel="noreferrer"
@@ -97,40 +70,12 @@ export function PublicationDetailsPage() {
               </a>
             )}
 
-            {publication.source_file_id && (
-              <button
-                className="button"
-                type="button"
-                onClick={handleProcessPdf}
-                disabled={isProcessing}
-              >
-                {isProcessing ? "Обработка..." : "Запустить обработку PDF"}
-              </button>
-            )}
-
-            <Link
-              className="button button_secondary"
-              to={`/admin/publications/${publication.id}/edit`}
-            >
-              Редактировать
-            </Link>
-
-            <Link className="button button_secondary" to="/admin/publications">
+            <Link className="button button_secondary" to="/publications">
               К списку
             </Link>
           </div>
         }
       />
-
-      {processingMessage && (
-        <p
-          className={
-            processingMessage.includes("завершена") ? "success" : "error"
-          }
-        >
-          {processingMessage}
-        </p>
-      )}
 
       <section className="card page-section details">
         <h2>Основная информация</h2>
@@ -148,11 +93,6 @@ export function PublicationDetailsPage() {
           <dt>DOI</dt>
           <dd>{publication.doi ?? "—"}</dd>
 
-          <dt>Статус</dt>
-          <dd>
-            <StatusBadge value={publication.status} />
-          </dd>
-
           <dt>Авторы</dt>
           <dd>
             {publication.authors.map((author) => author.full_name).join(", ") ||
@@ -160,9 +100,7 @@ export function PublicationDetailsPage() {
           </dd>
 
           <dt>Темы</dt>
-          <dd>
-            {publication.topics.map((topic) => topic.name).join(", ") || "—"}
-          </dd>
+          <dd>{publication.topics.map((topic) => topic.name).join(", ") || "—"}</dd>
 
           <dt>Ключевые слова</dt>
           <dd>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 import { keywordsApi } from "../api/keywordsApi";
 import { PageHeader } from "../components/common/PageHeader";
@@ -36,7 +37,7 @@ export function KeywordsPage() {
     setFormData(emptyForm);
   }
 
-  async function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
     if (!formData.name.trim()) {

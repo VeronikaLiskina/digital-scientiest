@@ -1,4 +1,5 @@
 import { useRef, useState } from "react";
+import type { ChangeEvent } from "react";
 
 import { sourceFilesApi } from "../../api/sourceFilesApi";
 import type { SourceFile } from "../../types/entities";
@@ -17,7 +18,7 @@ export function PdfUpload({ onUploaded }: PdfUploadProps) {
     inputRef.current?.click();
   }
 
-  function handleFileChange(event: React.ChangeEvent<HTMLInputElement>) {
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0] ?? null;
 
     if (!file) {

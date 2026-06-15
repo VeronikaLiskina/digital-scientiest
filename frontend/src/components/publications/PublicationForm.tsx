@@ -1,7 +1,9 @@
-import { FormEvent, useState } from 'react';
+import { useState } from 'react';
+import type { ChangeEvent, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import type { Author, Id, Keyword, PublicationCreate, SourceFile, Topic } from '../../api/types';
+import type { PublicationFormData } from '../../types/forms';
 import { publicationsApi } from '../../api/publicationsApi';
 import { PdfUpload } from '../files/PdfUpload';
 
@@ -11,7 +13,7 @@ type Props = {
   keywords: Keyword[];
 };
 
-function selectedIds(event: React.ChangeEvent<HTMLSelectElement>): Id[] {
+function selectedIds(event: ChangeEvent<HTMLSelectElement>): Id[] {
   return Array.from(event.target.selectedOptions).map((option) => Number(option.value));
 }
 
@@ -50,14 +52,26 @@ export function PublicationForm({ authors, topics, keywords }: Props) {
       setIsSaving(true);
       setError(null);
 
-      const created = await publicationsApi.create({
-        ...form,
-        source_file_id: sourceFile?.id ?? form.source_file_id,
-        year: form.year ? Number(form.year) : null,
-        doi: form.doi || null,
-      });
+      const payload: PublicationFormData = {
+        title: form.title,
+        year: form.year ? String(form.year) : "",
+        language: form.language ?? "",
+        publication_type: form.publication_type ?? "",
+        doi: form.doi ?? "",
+        status: form.status ?? "draft",
+        source_file_id: sourceFile?.id
+          ? String(sourceFile.id)
+          : form.source_file_id
+            ? String(form.source_file_id)
+            : "",
+        author_ids: form.author_ids,
+        topic_ids: form.topic_ids,
+        keyword_ids: form.keyword_ids,
+      };
 
-      navigate(`/publications/${created.id}`);
+      const created = await publicationsApi.create(payload);
+
+      navigate(`/admin/publications/${created.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Не удалось сохранить публикацию.');
     } finally {

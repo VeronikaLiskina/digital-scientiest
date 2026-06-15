@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 
 import { authorsApi } from "../api/authorsApi";
 import { PageHeader } from "../components/common/PageHeader";
@@ -40,7 +41,7 @@ export function AuthorsPage() {
     setFormData(emptyForm);
   }
 
-  async function handleSubmit(event: React.FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
     if (!formData.full_name.trim()) {

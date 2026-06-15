@@ -11,12 +11,12 @@ import {
 } from "../components/icons/AppIcons";
 
 const cards = [
-  { title: "Публикации", icon: <DocumentIcon />, to: "/publications" },
-  { title: "Файлы", icon: <FolderIcon />, to: "/files" },
-  { title: "Авторы", icon: <UserIcon />, to: "/authors" },
-  { title: "Темы", icon: <TagIcon />, to: "/topics" },
-  { title: "Ключевые слова", icon: <HashIcon />, to: "/keywords" },
-  { title: "Журнал обработки", icon: <ClipboardIcon />, to: "/processing-logs" },
+  { title: "Публикации", icon: <DocumentIcon />, to: "/admin/publications" },
+  { title: "Файлы", icon: <FolderIcon />, to: "/admin/files" },
+  { title: "Авторы", icon: <UserIcon />, to: "/admin/authors" },
+  { title: "Темы", icon: <TagIcon />, to: "/admin/topics" },
+  { title: "Ключевые слова", icon: <HashIcon />, to: "/admin/keywords" },
+  { title: "Журнал обработки", icon: <ClipboardIcon />, to: "/admin/processing-logs" },
 ];
 
 export function HomePage() {

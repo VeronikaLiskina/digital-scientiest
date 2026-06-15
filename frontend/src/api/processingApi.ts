@@ -1,16 +1,16 @@
-import { apiRequest } from './client';
-import type { DocumentChunk, ProcessingLog } from './types';
+import { apiClient } from "./client";
+import type { DocumentChunk, ProcessingLog } from "../types/entities";
 
 export const processingApi = {
-  getAllLogs: () => apiRequest<ProcessingLog[]>('/processing-logs'),
+  getAllLogs: () => apiClient.get<ProcessingLog[]>("/processing-logs"),
 
   getLogsBySourceFile: (sourceFileId: number) =>
-    apiRequest<ProcessingLog[]>('/processing-logs', {
-      query: { source_file_id: sourceFileId },
-    }),
+    apiClient.get<ProcessingLog[]>(
+      `/processing-logs?source_file_id=${sourceFileId}`,
+    ),
 
   getChunksByPublication: (publicationId: number) =>
-    apiRequest<DocumentChunk[]>('/document-chunks', {
-      query: { publication_id: publicationId },
-    }),
+    apiClient.get<DocumentChunk[]>(
+      `/document-chunks?publication_id=${publicationId}`,
+    ),
 };
