@@ -7,7 +7,11 @@ import { publicationsApi } from "../api/publicationsApi";
 import { sourceFilesApi } from "../api/sourceFilesApi";
 import { PageHeader } from "../components/common/PageHeader";
 import { StatusBadge } from "../components/common/StatusBadge";
-import type { DocumentChunk, ProcessingLog, Publication } from "../types/entities";
+import type {
+  DocumentChunk,
+  ProcessingLog,
+  Publication,
+} from "../types/entities";
 import { getPublicationTypeLabel } from "../utils/publicationTypes";
 
 function getChunkText(chunk: DocumentChunk) {
@@ -60,9 +64,7 @@ export function PublicationDetailsPage() {
 
     loadPublication().catch((err) => {
       setError(
-        err instanceof Error
-          ? err.message
-          : "Не удалось загрузить публикацию",
+        err instanceof Error ? err.message : "Не удалось загрузить публикацию",
       );
     });
   }, [id]);
@@ -120,7 +122,10 @@ export function PublicationDetailsPage() {
   async function handleSaveChunk(chunkId: number) {
     try {
       setChunkActionError("");
-      const updatedChunk = await documentChunksApi.update(chunkId, editingChunkText);
+      const updatedChunk = await documentChunksApi.update(
+        chunkId,
+        editingChunkText,
+      );
 
       setChunks((prev) =>
         prev.map((chunk) => (chunk.id === chunkId ? updatedChunk : chunk)),
@@ -213,13 +218,6 @@ export function PublicationDetailsPage() {
           }
         >
           {processingMessage}
-        </p>
-      )}
-
-      {publication.source_file_id && (
-        <p className="muted processing-warning">
-          При повторной обработке PDF текстовые фрагменты будут созданы заново.
-          Ручные изменения могут быть потеряны.
         </p>
       )}
 
@@ -319,7 +317,9 @@ export function PublicationDetailsPage() {
                   <textarea
                     className="chunk-card__textarea"
                     value={editingChunkText}
-                    onChange={(event) => setEditingChunkText(event.target.value)}
+                    onChange={(event) =>
+                      setEditingChunkText(event.target.value)
+                    }
                   />
                 ) : (
                   <p>{getChunkText(chunk)}</p>
