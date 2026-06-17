@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom';
 import type { Publication } from '../../api/types';
+import { getPublicationTypeLabel } from '../../utils/publicationTypes';
 
 type Props = {
   publications: Publication[];
@@ -18,7 +19,7 @@ export function PublicationList({ publications }: Props) {
             <h3>{publication.title}</h3>
             <p>
               {publication.year ?? 'год не указан'} · {publication.language ?? 'язык не указан'} ·{' '}
-              {publication.publication_type ?? 'тип не указан'}
+              {getPublicationTypeLabel(publication.publication_type)}
             </p>
             <p className="muted">
               Авторы: {publication.authors.map((author) => author.full_name).join(', ') || 'не указаны'}

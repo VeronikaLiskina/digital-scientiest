@@ -1,8 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import json
+from pathlib import Path
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.config import settings
 from app.db.database import get_db
 from app.models.author import Author
 from app.models.keyword import Keyword
@@ -49,10 +54,14 @@ async def get_items_by_ids(
     if not ids:
         return []
 
-    result = await db.execute(select(model).where(model.id.in_(ids)))
+    unique_ids = list(set(ids))
+
+    result = await db.execute(
+        select(model).where(model.id.in_(unique_ids))
+    )
     items = list(result.scalars().all())
 
-    if len(items) != len(set(ids)):
+    if len(items) != len(unique_ids):
         raise HTTPException(
             status_code=400,
             detail=f"Some {model.__tablename__} ids do not exist",
@@ -74,12 +83,158 @@ async def check_source_file_exists(
         raise HTTPException(status_code=400, detail="Source file not found")
 
 
+def parse_ids(value: str | None) -> list[int]:
+    """
+    Для multipart/form-data.
+
+    Поддерживает два варианта:
+    "1,2,3"
+    или
+    "[1, 2, 3]"
+    """
+
+    if not value:
+        return []
+
+    value = value.strip()
+
+    if not value:
+        return []
+
+    try:
+        if value.startswith("["):
+            parsed = json.loads(value)
+
+            if not isinstance(parsed, list):
+                raise ValueError
+
+            return [int(item) for item in parsed]
+
+        return [
+            int(item.strip())
+            for item in value.split(",")
+            if item.strip()
+        ]
+
+    except (ValueError, TypeError, json.JSONDecodeError):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Некорректный список id: {value}",
+        )
+
+
+def normalize_publication_type(value: str) -> str:
+    """
+    Чтобы backend нормально принимал и английские значения,
+    и русские значения из интерфейса.
+    """
+
+    publication_type_map = {
+        "article": "article",
+        "статья": "article",
+
+        "conference": "conference",
+        "материалы конференции": "conference",
+        "конференция": "conference",
+
+        "report": "report",
+        "отчет": "report",
+        "отчёт": "report",
+
+        "book": "book",
+        "книга": "book",
+
+        "thesis": "thesis",
+        "abstract": "thesis",
+        "тезисы": "thesis",
+    }
+
+    normalized = publication_type_map.get(value.strip().lower())
+
+    if normalized is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Некорректный тип публикации: {value}",
+        )
+
+    return normalized
+
+
+def normalize_language(value: str) -> str:
+    language_map = {
+        "ru": "ru",
+        "rus": "ru",
+        "russian": "ru",
+        "русский": "ru",
+
+        "en": "en",
+        "eng": "en",
+        "english": "en",
+        "английский": "en",
+    }
+
+    normalized = language_map.get(value.strip().lower())
+
+    if normalized is None:
+        return value
+
+    return normalized
+
+
+async def save_uploaded_pdf(file: UploadFile) -> SourceFile:
+    if not file.filename:
+        raise HTTPException(
+            status_code=400,
+            detail="Имя файла не указано",
+        )
+
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Можно загружать только PDF-файлы",
+        )
+
+    upload_dir = Path(settings.upload_dir)
+    upload_dir.mkdir(parents=True, exist_ok=True)
+
+    original_filename = file.filename
+    saved_filename = f"{uuid4()}.pdf"
+    file_path = upload_dir / saved_filename
+
+    content = await file.read()
+
+    if not content:
+        raise HTTPException(
+            status_code=400,
+            detail="Файл пустой",
+        )
+
+    file_path.write_bytes(content)
+
+    source_file = SourceFile(
+        file_name=original_filename,
+        file_path=str(file_path),
+        file_type="application/pdf",
+        pdf_quality="text_pdf",
+        has_figures=False,
+        has_tables=False,
+        processing_status="new",
+        comment="Файл загружен при создании публикации",
+    )
+
+    return source_file
+
+
 @router.post("", response_model=PublicationRead, status_code=status.HTTP_201_CREATED)
 async def create_publication(
     data: PublicationCreate,
     db: AsyncSession = Depends(get_db),
 ):
     await check_source_file_exists(db, data.source_file_id)
+
+    authors = await get_items_by_ids(db, Author, data.author_ids)
+    topics = await get_items_by_ids(db, Topic, data.topic_ids)
+    keywords = await get_items_by_ids(db, Keyword, data.keyword_ids)
 
     publication = Publication(
         title=data.title,
@@ -91,9 +246,71 @@ async def create_publication(
         source_file_id=data.source_file_id,
     )
 
-    publication.authors = await get_items_by_ids(db, Author, data.author_ids)
-    publication.topics = await get_items_by_ids(db, Topic, data.topic_ids)
-    publication.keywords = await get_items_by_ids(db, Keyword, data.keyword_ids)
+    publication.authors = authors
+    publication.topics = topics
+    publication.keywords = keywords
+
+    db.add(publication)
+    await db.commit()
+
+    return await get_publication_or_404(publication.id, db)
+
+
+@router.post(
+    "/with-file",
+    response_model=PublicationRead,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_publication_with_file(
+    title: str = Form(...),
+    year: int | None = Form(None),
+    language: str = Form("ru"),
+    publication_type: str = Form("article"),
+    doi: str | None = Form(None),
+    status_value: str = Form("draft"),
+
+    author_ids: str | None = Form(None),
+    topic_ids: str | None = Form(None),
+    keyword_ids: str | None = Form(None),
+
+    file: UploadFile = File(...),
+
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Создание публикации вместе с PDF.
+
+    Нужна для формы "Добавить публикацию",
+    чтобы backend сразу создал source_file
+    и положил его id в publication.source_file_id.
+    """
+
+    source_file = await save_uploaded_pdf(file)
+
+    db.add(source_file)
+    await db.flush()
+
+    parsed_author_ids = parse_ids(author_ids)
+    parsed_topic_ids = parse_ids(topic_ids)
+    parsed_keyword_ids = parse_ids(keyword_ids)
+
+    authors = await get_items_by_ids(db, Author, parsed_author_ids)
+    topics = await get_items_by_ids(db, Topic, parsed_topic_ids)
+    keywords = await get_items_by_ids(db, Keyword, parsed_keyword_ids)
+
+    publication = Publication(
+        title=title,
+        year=year,
+        language=normalize_language(language),
+        publication_type=normalize_publication_type(publication_type),
+        doi=doi,
+        status=status_value,
+        source_file_id=source_file.id,
+    )
+
+    publication.authors = authors
+    publication.topics = topics
+    publication.keywords = keywords
 
     db.add(publication)
     await db.commit()
@@ -158,6 +375,14 @@ async def update_publication(
 
     if "source_file_id" in update_data:
         await check_source_file_exists(db, update_data["source_file_id"])
+
+    if "publication_type" in update_data and update_data["publication_type"]:
+        update_data["publication_type"] = normalize_publication_type(
+            update_data["publication_type"]
+        )
+
+    if "language" in update_data and update_data["language"]:
+        update_data["language"] = normalize_language(update_data["language"])
 
     for field, value in update_data.items():
         setattr(publication, field, value)

@@ -6,6 +6,7 @@ import type { Author, Id, Keyword, PublicationCreate, SourceFile, Topic } from '
 import type { PublicationFormData } from '../../types/forms';
 import { publicationsApi } from '../../api/publicationsApi';
 import { PdfUpload } from '../files/PdfUpload';
+import { publicationTypeOptions } from '../../utils/publicationTypes';
 
 type Props = {
   authors: Author[];
@@ -117,10 +118,11 @@ export function PublicationForm({ authors, topics, keywords }: Props) {
             value={form.publication_type ?? ''}
             onChange={(event) => update('publication_type', event.target.value)}
           >
-            <option value="article">article</option>
-            <option value="conference">conference</option>
-            <option value="monograph">monograph</option>
-            <option value="report">report</option>
+            {publicationTypeOptions.map((type) => (
+              <option key={type.value} value={type.value}>
+                {type.label}
+              </option>
+            ))}
           </select>
         </label>
 

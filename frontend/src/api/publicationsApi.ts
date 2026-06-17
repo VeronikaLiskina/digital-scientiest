@@ -38,12 +38,40 @@ function normalizePublicationForm(data: PublicationFormData) {
   };
 }
 
+function buildPublicationFormData(data: PublicationFormData, file: File) {
+  const formData = new FormData();
+
+  formData.append("title", data.title.trim());
+
+  if (data.year) {
+    formData.append("year", String(data.year));
+  }
+
+  formData.append("language", data.language || "");
+  formData.append("publication_type", data.publication_type || "");
+  formData.append("doi", data.doi || "");
+  formData.append("status", data.status || "draft");
+
+  formData.append("author_ids", data.author_ids.join(","));
+  formData.append("topic_ids", data.topic_ids.join(","));
+  formData.append("keyword_ids", data.keyword_ids.join(","));
+
+  formData.append("file", file);
+
+  return formData;
+}
+
 export const publicationsApi = {
   getAll: (filters: PublicationsFilters = {}) =>
     apiClient.get<Publication[]>(`/publications${buildQuery(filters)}`),
   getOne: (id: number) => apiClient.get<Publication>(`/publications/${id}`),
   create: (data: PublicationFormData) =>
     apiClient.post<Publication>("/publications", normalizePublicationForm(data)),
+  createWithFile: (data: PublicationFormData, file: File) =>
+    apiClient.postForm<Publication>(
+      "/publications/with-file",
+      buildPublicationFormData(data, file),
+    ),
   update: (id: number, data: PublicationFormData) =>
     apiClient.patch<Publication>(`/publications/${id}`, normalizePublicationForm(data)),
   delete: (id: number) => apiClient.delete<void>(`/publications/${id}`),

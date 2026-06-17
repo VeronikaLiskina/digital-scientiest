@@ -10,8 +10,10 @@ import { topicsApi } from "../api/topicsApi";
 import { MultiSelect } from "../components/common/MultiSelect";
 import { PageHeader } from "../components/common/PageHeader";
 import { PdfUpload } from "../components/files/PdfUpload";
+import { QuickCreateField } from "../components/publications/QuickCreateField";
 import type { Author, Keyword, SourceFile, Topic } from "../types/entities";
 import type { PublicationFormData } from "../types/forms";
+import { publicationTypeOptions } from "../utils/publicationTypes";
 
 const emptyForm: PublicationFormData = {
   title: "",
@@ -34,6 +36,7 @@ export function PublicationCreatePage() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
   const [formData, setFormData] = useState<PublicationFormData>(emptyForm);
+  const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
 
@@ -57,6 +60,24 @@ export function PublicationCreatePage() {
     setFormData((prev) => ({ ...prev, [key]: value }));
   }
 
+  async function handleCreateAuthor(fullName: string) {
+    const created = await authorsApi.create({ full_name: fullName, organization: "" });
+    setAuthors((prev) => [created, ...prev]);
+    setFormData((prev) => ({ ...prev, author_ids: [...prev.author_ids, created.id] }));
+  }
+
+  async function handleCreateTopic(name: string) {
+    const created = await topicsApi.create({ name, description: "" });
+    setTopics((prev) => [created, ...prev]);
+    setFormData((prev) => ({ ...prev, topic_ids: [...prev.topic_ids, created.id] }));
+  }
+
+  async function handleCreateKeyword(name: string) {
+    const created = await keywordsApi.create({ name });
+    setKeywords((prev) => [created, ...prev]);
+    setFormData((prev) => ({ ...prev, keyword_ids: [...prev.keyword_ids, created.id] }));
+  }
+
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
@@ -69,7 +90,10 @@ export function PublicationCreatePage() {
       setIsSaving(true);
       setError("");
 
-      const created = await publicationsApi.create(formData);
+      const created = selectedPdfFile
+        ? await publicationsApi.createWithFile(formData, selectedPdfFile)
+        : await publicationsApi.create(formData);
+
       navigate(`/admin/publications/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать публикацию");
@@ -95,18 +119,14 @@ export function PublicationCreatePage() {
       <section className="card page-section">
         <form className="form" onSubmit={handleSubmit}>
           <div className="publication-create-page__file-block">
-            <PdfUpload
-              onUploaded={(file) => {
-                setSourceFiles((prev) => [file, ...prev]);
-                updateForm("source_file_id", String(file.id));
-              }}
-            />
+            <PdfUpload onFileSelected={setSelectedPdfFile} />
 
             <label className="source-file-select">
               <span>Или выберите файл из уже загруженных</span>
               <select
                 value={formData.source_file_id}
                 onChange={(event) => updateForm("source_file_id", event.target.value)}
+                disabled={Boolean(selectedPdfFile)}
               >
                 <option value="">Без файла</option>
                 {sourceFiles.map((file) => (
@@ -115,6 +135,11 @@ export function PublicationCreatePage() {
                   </option>
                 ))}
               </select>
+              {selectedPdfFile && (
+                <span className="muted">
+                  Выбран новый PDF — он будет загружен и привязан автоматически.
+                </span>
+              )}
             </label>
           </div>
 
@@ -154,10 +179,11 @@ export function PublicationCreatePage() {
                 value={formData.publication_type}
                 onChange={(event) => updateForm("publication_type", event.target.value)}
               >
-                <option value="article">Article</option>
-                <option value="conference">Conference</option>
-                <option value="report">Report</option>
-                <option value="book">Book</option>
+                {publicationTypeOptions.map((type) => (
+                  <option key={type.value} value={type.value}>
+                    {type.label}
+                  </option>
+                ))}
               </select>
             </label>
 
@@ -183,26 +209,50 @@ export function PublicationCreatePage() {
             />
           </label>
 
-          <MultiSelect
-            label="Авторы"
-            values={formData.author_ids}
-            options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
-            onChange={(values) => updateForm("author_ids", values)}
-          />
+          <div className="publication-form-section">
+            <MultiSelect
+              label="Авторы"
+              values={formData.author_ids}
+              options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
+              onChange={(values) => updateForm("author_ids", values)}
+            />
+            <QuickCreateField
+              label="Заполните ФИО автора"
+              placeholder="Новый автор"
+              buttonText="+ Добавить автора"
+              onCreate={handleCreateAuthor}
+            />
+          </div>
 
-          <MultiSelect
-            label="Темы"
-            values={formData.topic_ids}
-            options={topics.map((topic) => ({ id: topic.id, label: topic.name }))}
-            onChange={(values) => updateForm("topic_ids", values)}
-          />
+          <div className="publication-form-section">
+            <MultiSelect
+              label="Темы"
+              values={formData.topic_ids}
+              options={topics.map((topic) => ({ id: topic.id, label: topic.name }))}
+              onChange={(values) => updateForm("topic_ids", values)}
+            />
+            <QuickCreateField
+              label="Заполните название темы"
+              placeholder="Новая тема"
+              buttonText="+ Добавить тему"
+              onCreate={handleCreateTopic}
+            />
+          </div>
 
-          <MultiSelect
-            label="Ключевые слова"
-            values={formData.keyword_ids}
-            options={keywords.map((keyword) => ({ id: keyword.id, label: keyword.name }))}
-            onChange={(values) => updateForm("keyword_ids", values)}
-          />
+          <div className="publication-form-section">
+            <MultiSelect
+              label="Ключевые слова"
+              values={formData.keyword_ids}
+              options={keywords.map((keyword) => ({ id: keyword.id, label: keyword.name }))}
+              onChange={(values) => updateForm("keyword_ids", values)}
+            />
+            <QuickCreateField
+              label="Заполните ключевое слово"
+              placeholder="Новое ключевое слово"
+              buttonText="+ Добавить ключевое слово"
+              onCreate={handleCreateKeyword}
+            />
+          </div>
 
           <div className="form-actions">
             <button className="button" type="submit" disabled={isSaving}>

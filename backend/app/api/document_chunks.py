@@ -18,21 +18,54 @@ router = APIRouter(prefix="/document-chunks", tags=["Document chunks"])
 async def check_publication_exists(
     db: AsyncSession,
     publication_id: int,
-):
+) -> None:
     publication = await db.get(Publication, publication_id)
 
     if publication is None:
-        raise HTTPException(status_code=400, detail="Publication not found")
+        raise HTTPException(
+            status_code=400,
+            detail="Publication not found",
+        )
 
 
-@router.post("", response_model=DocumentChunkRead, status_code=status.HTTP_201_CREATED)
+async def get_chunk_or_404(
+    db: AsyncSession,
+    chunk_id: int,
+) -> DocumentChunk:
+    chunk = await db.get(DocumentChunk, chunk_id)
+
+    if chunk is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Document chunk not found",
+        )
+
+    return chunk
+
+
+@router.post(
+    "",
+    response_model=DocumentChunkRead,
+    status_code=status.HTTP_201_CREATED,
+)
 async def create_document_chunk(
     data: DocumentChunkCreate,
     db: AsyncSession = Depends(get_db),
 ):
     await check_publication_exists(db, data.publication_id)
 
-    chunk = DocumentChunk(**data.model_dump())
+    chunk_text = data.chunk_text.strip()
+
+    if not chunk_text:
+        raise HTTPException(
+            status_code=400,
+            detail="Chunk text cannot be empty",
+        )
+
+    chunk_data = data.model_dump()
+    chunk_data["chunk_text"] = chunk_text
+
+    chunk = DocumentChunk(**chunk_data)
 
     db.add(chunk)
     await db.commit()
@@ -51,7 +84,7 @@ async def get_document_chunks(
         DocumentChunk.chunk_index,
     )
 
-    if publication_id:
+    if publication_id is not None:
         query = query.where(DocumentChunk.publication_id == publication_id)
 
     result = await db.execute(query)
@@ -63,12 +96,7 @@ async def get_document_chunk(
     chunk_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    chunk = await db.get(DocumentChunk, chunk_id)
-
-    if chunk is None:
-        raise HTTPException(status_code=404, detail="Document chunk not found")
-
-    return chunk
+    return await get_chunk_or_404(db, chunk_id)
 
 
 @router.patch("/{chunk_id}", response_model=DocumentChunkRead)
@@ -77,12 +105,21 @@ async def update_document_chunk(
     data: DocumentChunkUpdate,
     db: AsyncSession = Depends(get_db),
 ):
-    chunk = await db.get(DocumentChunk, chunk_id)
-
-    if chunk is None:
-        raise HTTPException(status_code=404, detail="Document chunk not found")
+    chunk = await get_chunk_or_404(db, chunk_id)
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if "publication_id" in update_data:
+        await check_publication_exists(db, update_data["publication_id"])
+
+    if "chunk_text" in update_data and update_data["chunk_text"] is not None:
+        update_data["chunk_text"] = update_data["chunk_text"].strip()
+
+        if not update_data["chunk_text"]:
+            raise HTTPException(
+                status_code=400,
+                detail="Chunk text cannot be empty",
+            )
 
     for field, value in update_data.items():
         setattr(chunk, field, value)
@@ -98,10 +135,7 @@ async def delete_document_chunk(
     chunk_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    chunk = await db.get(DocumentChunk, chunk_id)
-
-    if chunk is None:
-        raise HTTPException(status_code=404, detail="Document chunk not found")
+    chunk = await get_chunk_or_404(db, chunk_id)
 
     await db.delete(chunk)
     await db.commit()

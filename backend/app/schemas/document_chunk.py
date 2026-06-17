@@ -13,11 +13,15 @@ class DocumentChunkCreate(DocumentChunkBase):
     pass
 
 
+from pydantic import BaseModel, ConfigDict
+
+
 class DocumentChunkUpdate(BaseModel):
     chunk_text: str | None = None
     page_number: int | None = None
     chunk_index: int | None = None
-    embedding: list[float] | None = None
+
+    model_config = ConfigDict(extra="forbid")
 
 
 class DocumentChunkRead(DocumentChunkBase):

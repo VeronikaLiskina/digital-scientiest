@@ -33,5 +33,4 @@ app.include_router(api_router)
 async def health_check():
     return {
         "status": "ok",
-        "database_url_exists": bool(settings.database_url),
     }

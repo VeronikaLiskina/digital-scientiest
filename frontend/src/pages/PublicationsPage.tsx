@@ -9,6 +9,7 @@ import { ListTitle } from "../components/common/ListTitle";
 import { PageHeader } from "../components/common/PageHeader";
 import { StatusBadge } from "../components/common/StatusBadge";
 import type { Author, Keyword, Publication, Topic } from "../types/entities";
+import { getPublicationTypeLabel } from "../utils/publicationTypes";
 
 export function PublicationsPage() {
   const [publications, setPublications] = useState<Publication[]>([]);
@@ -158,6 +159,7 @@ export function PublicationsPage() {
               <tr>
                 <th>Название</th>
                 <th>Год</th>
+                <th>Тип</th>
                 <th>Авторы</th>
                 <th>Темы</th>
                 <th>Статус</th>
@@ -170,6 +172,7 @@ export function PublicationsPage() {
                 <tr key={publication.id}>
                   <td>{publication.title}</td>
                   <td>{publication.year ?? "—"}</td>
+                  <td>{getPublicationTypeLabel(publication.publication_type)}</td>
                   <td>{publication.authors.map((author) => author.full_name).join(", ") || "—"}</td>
                   <td>{publication.topics.map((topic) => topic.name).join(", ") || "—"}</td>
                   <td>
@@ -194,7 +197,7 @@ export function PublicationsPage() {
 
               {!isLoading && !publications.length && (
                 <tr>
-                  <td colSpan={6} className="empty">
+                  <td colSpan={7} className="empty">
                     Публикации пока не добавлены.
                   </td>
                 </tr>
@@ -202,7 +205,7 @@ export function PublicationsPage() {
 
               {isLoading && (
                 <tr>
-                  <td colSpan={6} className="muted">
+                  <td colSpan={7} className="muted">
                     Загрузка...
                   </td>
                 </tr>

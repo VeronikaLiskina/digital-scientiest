@@ -7,4 +7,9 @@ export const documentChunksApi = {
     return apiClient.get<DocumentChunk[]>(`/document-chunks${query}`);
   },
   getOne: (id: number) => apiClient.get<DocumentChunk>(`/document-chunks/${id}`),
+  update: (id: number, chunkText: string) =>
+    apiClient.patch<DocumentChunk>(`/document-chunks/${id}`, {
+      chunk_text: chunkText,
+    }),
+  delete: (id: number) => apiClient.delete<void>(`/document-chunks/${id}`),
 };

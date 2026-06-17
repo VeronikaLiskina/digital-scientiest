@@ -11,6 +11,7 @@ import {
 import { topicsApi } from "../../api/topicsApi";
 import { ListTitle } from "../../components/common/ListTitle";
 import type { Author, Keyword, Publication, Topic } from "../../types/entities";
+import { getPublicationTypeLabel } from "../../utils/publicationTypes";
 
 const emptyFilters: PublicationsFilters = {
   title: "",
@@ -199,7 +200,7 @@ export function ReaderPublicationsPage() {
                     "Авторы не указаны"}
                 </p>
                 <p>
-                  {publication.year ?? "год не указан"} · {publication.publication_type ?? "тип не указан"}
+                  {publication.year ?? "год не указан"} · {getPublicationTypeLabel(publication.publication_type)}
                   {publication.doi ? ` · DOI: ${publication.doi}` : ""}
                 </p>
 
