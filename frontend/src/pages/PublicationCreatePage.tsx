@@ -28,6 +28,20 @@ const emptyForm: PublicationFormData = {
   keyword_ids: [],
 };
 
+function uniqueIds(ids: number[]) {
+  return Array.from(new Set(ids));
+}
+
+function mergeById<T extends { id: number }>(current: T[], incoming: T[]) {
+  const map = new Map<number, T>();
+
+  [...current, ...incoming].forEach((item) => {
+    map.set(item.id, item);
+  });
+
+  return Array.from(map.values());
+}
+
 export function PublicationCreatePage() {
   const navigate = useNavigate();
 
@@ -38,7 +52,9 @@ export function PublicationCreatePage() {
   const [formData, setFormData] = useState<PublicationFormData>(emptyForm);
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [error, setError] = useState("");
+  const [metadataMessage, setMetadataMessage] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
 
   useEffect(() => {
     Promise.all([
@@ -62,20 +78,109 @@ export function PublicationCreatePage() {
 
   async function handleCreateAuthor(fullName: string) {
     const created = await authorsApi.create({ full_name: fullName, organization: "" });
-    setAuthors((prev) => [created, ...prev]);
-    setFormData((prev) => ({ ...prev, author_ids: [...prev.author_ids, created.id] }));
+    setAuthors((prev) => mergeById(prev, [created]));
+    setFormData((prev) => ({ ...prev, author_ids: uniqueIds([...prev.author_ids, created.id]) }));
   }
 
   async function handleCreateTopic(name: string) {
     const created = await topicsApi.create({ name, description: "" });
-    setTopics((prev) => [created, ...prev]);
-    setFormData((prev) => ({ ...prev, topic_ids: [...prev.topic_ids, created.id] }));
+    setTopics((prev) => mergeById(prev, [created]));
+    setFormData((prev) => ({ ...prev, topic_ids: uniqueIds([...prev.topic_ids, created.id]) }));
   }
 
   async function handleCreateKeyword(name: string) {
     const created = await keywordsApi.create({ name });
-    setKeywords((prev) => [created, ...prev]);
-    setFormData((prev) => ({ ...prev, keyword_ids: [...prev.keyword_ids, created.id] }));
+    setKeywords((prev) => mergeById(prev, [created]));
+    setFormData((prev) => ({ ...prev, keyword_ids: uniqueIds([...prev.keyword_ids, created.id]) }));
+  }
+
+  async function handlePdfSelected(file: File | null) {
+    setSelectedPdfFile(file);
+    setMetadataMessage("");
+
+    if (!file) {
+      return;
+    }
+
+    try {
+      setIsExtractingMetadata(true);
+      setError("");
+
+      const preview = await sourceFilesApi.extractMetadata(file);
+
+      if (preview.status === "duplicate_file") {
+        setError(preview.message ?? "Такой PDF уже загружался");
+        return;
+      }
+
+      const extracted = preview.extracted;
+
+      if (!extracted) {
+        setMetadataMessage("PDF выбран. Данные для автозаполнения не найдены.");
+        return;
+      }
+
+      const extractedAuthors = extracted.authors.length
+        ? await Promise.all(
+            extracted.authors.map((fullName) =>
+              authorsApi.create({ full_name: fullName, organization: "" }),
+            ),
+          )
+        : [];
+
+      const extractedTopics = extracted.topics.length
+        ? await Promise.all(
+            extracted.topics.map((name) => topicsApi.create({ name, description: "" })),
+          )
+        : [];
+
+      const extractedKeywords = extracted.keywords.length
+        ? await Promise.all(extracted.keywords.map((name) => keywordsApi.create({ name })))
+        : [];
+
+      if (extractedAuthors.length) {
+        setAuthors((prev) => mergeById(prev, extractedAuthors));
+      }
+
+      if (extractedTopics.length) {
+        setTopics((prev) => mergeById(prev, extractedTopics));
+      }
+
+      if (extractedKeywords.length) {
+        setKeywords((prev) => mergeById(prev, extractedKeywords));
+      }
+
+      setFormData((prev) => ({
+        ...prev,
+        title: extracted.title || prev.title,
+        year: extracted.year ? String(extracted.year) : prev.year,
+        language: extracted.language || prev.language,
+        publication_type: extracted.publication_type || prev.publication_type,
+        doi: extracted.doi || prev.doi,
+        source_file_id: "",
+        author_ids: uniqueIds([
+          ...prev.author_ids,
+          ...extractedAuthors.map((author) => author.id),
+        ]),
+        topic_ids: uniqueIds([
+          ...prev.topic_ids,
+          ...extractedTopics.map((topic) => topic.id),
+        ]),
+        keyword_ids: uniqueIds([
+          ...prev.keyword_ids,
+          ...extractedKeywords.map((keyword) => keyword.id),
+        ]),
+      }));
+
+      setMetadataMessage(
+        "PDF выбран. Если системе удалось распознать данные, они уже подставлены в форму. Проверьте их перед сохранением.",
+      );
+    } catch (err) {
+      setMetadataMessage("");
+      setError(err instanceof Error ? err.message : "Не удалось извлечь данные из PDF");
+    } finally {
+      setIsExtractingMetadata(false);
+    }
   }
 
   async function handleSubmit(event: FormEvent) {
@@ -106,7 +211,7 @@ export function PublicationCreatePage() {
     <section className="publication-create-page">
       <PageHeader
         title="Добавить публикацию"
-        description="Загрузите PDF и заполните карточку публикации."
+        description="Загрузите PDF и проверьте карточку публикации перед сохранением."
         actions={
           <Link className="button button_secondary" to="/admin/publications">
             К списку
@@ -115,11 +220,12 @@ export function PublicationCreatePage() {
       />
 
       {error && <p className="error">{error}</p>}
+      {metadataMessage && <p className="success">{metadataMessage}</p>}
 
       <section className="card page-section">
         <form className="form" onSubmit={handleSubmit}>
           <div className="publication-create-page__file-block">
-            <PdfUpload onFileSelected={setSelectedPdfFile} />
+            <PdfUpload onFileSelected={handlePdfSelected} />
 
             <label className="source-file-select">
               <span>Или выберите файл из уже загруженных</span>
@@ -137,7 +243,9 @@ export function PublicationCreatePage() {
               </select>
               {selectedPdfFile && (
                 <span className="muted">
-                  Выбран новый PDF — он будет загружен и привязан автоматически.
+                  {isExtractingMetadata
+                    ? "Пытаемся извлечь данные из PDF..."
+                    : "Выбран новый PDF — он будет загружен и привязан при создании публикации."}
                 </span>
               )}
             </label>
@@ -255,7 +363,7 @@ export function PublicationCreatePage() {
           </div>
 
           <div className="form-actions">
-            <button className="button" type="submit" disabled={isSaving}>
+            <button className="button" type="submit" disabled={isSaving || isExtractingMetadata}>
               {isSaving ? "Сохраняем..." : "Создать публикацию"}
             </button>
 

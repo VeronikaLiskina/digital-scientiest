@@ -22,6 +22,7 @@ export type SourceFile = {
   file_name: string;
   file_path: string;
   file_type: string;
+  file_hash?: string | null;
   pdf_quality?: string | null;
   has_figures: boolean;
   has_tables: boolean;

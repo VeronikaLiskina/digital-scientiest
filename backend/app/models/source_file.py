@@ -18,6 +18,7 @@ class SourceFile(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     file_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    file_hash: Mapped[str | None] = mapped_column(String(64), index=True, nullable=True)
 
     pdf_quality: Mapped[str | None] = mapped_column(String(100), nullable=True)
     has_figures: Mapped[bool] = mapped_column(default=False)

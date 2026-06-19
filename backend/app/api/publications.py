@@ -1,13 +1,9 @@
 import json
-from pathlib import Path
-from uuid import uuid4
-
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.config import settings
 from app.db.database import get_db
 from app.models.author import Author
 from app.models.keyword import Keyword
@@ -15,6 +11,7 @@ from app.models.publication import Publication
 from app.models.source_file import SourceFile
 from app.models.topic import Topic
 from app.schemas.publication import PublicationCreate, PublicationRead, PublicationUpdate
+from app.services.pdf_import import save_uploaded_pdf_as_source_file
 
 
 router = APIRouter(prefix="/publications", tags=["Publications"])
@@ -181,47 +178,13 @@ def normalize_language(value: str) -> str:
     return normalized
 
 
-async def save_uploaded_pdf(file: UploadFile) -> SourceFile:
-    if not file.filename:
-        raise HTTPException(
-            status_code=400,
-            detail="Имя файла не указано",
-        )
-
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(
-            status_code=400,
-            detail="Можно загружать только PDF-файлы",
-        )
-
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    original_filename = file.filename
-    saved_filename = f"{uuid4()}.pdf"
-    file_path = upload_dir / saved_filename
-
-    content = await file.read()
-
-    if not content:
-        raise HTTPException(
-            status_code=400,
-            detail="Файл пустой",
-        )
-
-    file_path.write_bytes(content)
-
-    source_file = SourceFile(
-        file_name=original_filename,
-        file_path=str(file_path),
-        file_type="application/pdf",
-        pdf_quality="text_pdf",
-        has_figures=False,
-        has_tables=False,
-        processing_status="new",
+async def save_uploaded_pdf(file: UploadFile, db: AsyncSession) -> SourceFile:
+    source_file, _ = await save_uploaded_pdf_as_source_file(
+        db=db,
+        file=file,
         comment="Файл загружен при создании публикации",
+        fail_on_duplicate=True,
     )
-
     return source_file
 
 
@@ -267,7 +230,7 @@ async def create_publication_with_file(
     language: str = Form("ru"),
     publication_type: str = Form("article"),
     doi: str | None = Form(None),
-    status_value: str = Form("draft"),
+    status: str = Form("draft"),
 
     author_ids: str | None = Form(None),
     topic_ids: str | None = Form(None),
@@ -285,10 +248,7 @@ async def create_publication_with_file(
     и положил его id в publication.source_file_id.
     """
 
-    source_file = await save_uploaded_pdf(file)
-
-    db.add(source_file)
-    await db.flush()
+    source_file = await save_uploaded_pdf(file, db)
 
     parsed_author_ids = parse_ids(author_ids)
     parsed_topic_ids = parse_ids(topic_ids)
@@ -304,7 +264,7 @@ async def create_publication_with_file(
         language=normalize_language(language),
         publication_type=normalize_publication_type(publication_type),
         doi=doi,
-        status=status_value,
+        status=status,
         source_file_id=source_file.id,
     )
 

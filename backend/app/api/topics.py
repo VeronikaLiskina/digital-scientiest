@@ -5,6 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.models.topic import Topic
 from app.schemas.topic import TopicCreate, TopicRead, TopicUpdate
+from app.services.topic_resolver import get_or_create_topic
+from app.utils.normalization import normalize_topic
 
 
 router = APIRouter(prefix="/topics", tags=["Topics"])
@@ -15,12 +17,13 @@ async def create_topic(
     data: TopicCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    topic = Topic(**data.model_dump())
-
-    db.add(topic)
+    topic = await get_or_create_topic(
+        db=db,
+        name=data.name,
+        description=data.description,
+    )
     await db.commit()
     await db.refresh(topic)
-
     return topic
 
 
@@ -63,6 +66,24 @@ async def update_topic(
         raise HTTPException(status_code=404, detail="Topic not found")
 
     update_data = data.model_dump(exclude_unset=True)
+
+    if "name" in update_data and update_data["name"] is not None:
+        normalized_name = normalize_topic(update_data["name"])
+        duplicate_result = await db.execute(
+            select(Topic).where(
+                Topic.normalized_name == normalized_name,
+                Topic.id != topic_id,
+            )
+        )
+        duplicate = duplicate_result.scalar_one_or_none()
+
+        if duplicate is not None:
+            raise HTTPException(
+                status_code=400,
+                detail="Тема с таким названием уже существует",
+            )
+
+        topic.normalized_name = normalized_name
 
     for field, value in update_data.items():
         setattr(topic, field, value)
