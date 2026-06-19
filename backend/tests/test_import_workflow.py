@@ -64,19 +64,24 @@ async def test_duplicate_pdf_upload_returns_409(client, tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_extract_metadata_endpoint_does_not_save_file(client, monkeypatch):
+async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existing_topics(client, monkeypatch):
     from app.api import source_files
     from app.services.pdf_import import ExtractedPublicationMetadata
 
+    await client.post(
+        "/api/topics",
+        json={"name": "Искусственный интеллект", "description": "ИИ"},
+    )
+
     def fake_extract(_content: bytes):
         return ExtractedPublicationMetadata(
-            title="Тестовая публикация",
+            title="Искусственный интеллект в научных публикациях",
             year=2024,
             language="ru",
             publication_type="article",
             doi="10.1234/test",
             authors=["Иванов И.И."],
-            keywords=["RAG"],
+            keywords=["RAG", "искусственный интеллект"],
             topics=[],
         )
 
@@ -91,8 +96,9 @@ async def test_extract_metadata_endpoint_does_not_save_file(client, monkeypatch)
 
     data = response.json()
     assert data["status"] == "metadata_extracted"
-    assert data["extracted"]["title"] == "Тестовая публикация"
+    assert data["extracted"]["title"] == "Искусственный интеллект в научных публикациях"
     assert data["extracted"]["authors"] == ["Иванов И.И."]
+    assert data["extracted"]["topics"] == ["Искусственный интеллект"]
 
     files = (await client.get("/api/source-files")).json()
     assert files == []

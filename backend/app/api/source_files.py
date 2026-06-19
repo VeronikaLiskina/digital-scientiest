@@ -21,6 +21,7 @@ from app.services.pdf_import import (
     validate_pdf_upload,
 )
 from app.services.pdf_processing import process_pdf_file
+from app.services.topic_suggester import suggest_topic_names
 from app.utils.file_hash import calculate_file_hash
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
@@ -71,7 +72,8 @@ async def extract_pdf_metadata(
     - проверяет PDF;
     - считает hash;
     - предупреждает о дубле PDF;
-    - пытается вытащить title/year/language/doi/authors/keywords.
+    - пытается вытащить title/year/language/doi/authors/keywords;
+    - подбирает темы только из существующего справочника topics.
     """
 
     validate_pdf_upload(file)
@@ -93,6 +95,11 @@ async def extract_pdf_metadata(
         )
 
     extracted = extract_publication_metadata_from_bytes(content)
+    extracted.topics = await suggest_topic_names(
+        db=db,
+        title=extracted.title,
+        keywords=extracted.keywords,
+    )
 
     return SourceFileMetadataPreview(
         status="metadata_extracted",
