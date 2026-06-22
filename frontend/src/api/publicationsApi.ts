@@ -23,6 +23,13 @@ function buildQuery(filters: PublicationsFilters) {
   return query ? `?${query}` : "";
 }
 
+function splitNames(value: string) {
+  return value
+    .split(/[;,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function normalizePublicationForm(data: PublicationFormData) {
   return {
     title: data.title.trim(),
@@ -35,6 +42,9 @@ function normalizePublicationForm(data: PublicationFormData) {
     author_ids: data.author_ids,
     topic_ids: data.topic_ids,
     keyword_ids: data.keyword_ids,
+    author_names: splitNames(data.author_names),
+    topic_names: splitNames(data.topic_names),
+    keyword_names: splitNames(data.keyword_names),
   };
 }
 
@@ -55,6 +65,10 @@ function buildPublicationFormData(data: PublicationFormData, file: File) {
   formData.append("author_ids", data.author_ids.join(","));
   formData.append("topic_ids", data.topic_ids.join(","));
   formData.append("keyword_ids", data.keyword_ids.join(","));
+
+  formData.append("author_names", data.author_names);
+  formData.append("topic_names", data.topic_names);
+  formData.append("keyword_names", data.keyword_names);
 
   formData.append("file", file);
 

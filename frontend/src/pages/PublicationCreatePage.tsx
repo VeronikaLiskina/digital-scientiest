@@ -26,6 +26,9 @@ const emptyForm: PublicationFormData = {
   author_ids: [],
   topic_ids: [],
   keyword_ids: [],
+  author_names: "",
+  topic_names: "",
+  keyword_names: "",
 };
 
 function uniqueIds(ids: number[]) {
@@ -120,36 +123,6 @@ export function PublicationCreatePage() {
         return;
       }
 
-      const extractedAuthors = extracted.authors.length
-        ? await Promise.all(
-            extracted.authors.map((fullName) =>
-              authorsApi.create({ full_name: fullName, organization: "" }),
-            ),
-          )
-        : [];
-
-      const extractedTopics = extracted.topics.length
-        ? await Promise.all(
-            extracted.topics.map((name) => topicsApi.create({ name, description: "" })),
-          )
-        : [];
-
-      const extractedKeywords = extracted.keywords.length
-        ? await Promise.all(extracted.keywords.map((name) => keywordsApi.create({ name })))
-        : [];
-
-      if (extractedAuthors.length) {
-        setAuthors((prev) => mergeById(prev, extractedAuthors));
-      }
-
-      if (extractedTopics.length) {
-        setTopics((prev) => mergeById(prev, extractedTopics));
-      }
-
-      if (extractedKeywords.length) {
-        setKeywords((prev) => mergeById(prev, extractedKeywords));
-      }
-
       setFormData((prev) => ({
         ...prev,
         title: extracted.title || prev.title,
@@ -158,18 +131,14 @@ export function PublicationCreatePage() {
         publication_type: extracted.publication_type || prev.publication_type,
         doi: extracted.doi || prev.doi,
         source_file_id: "",
-        author_ids: uniqueIds([
-          ...prev.author_ids,
-          ...extractedAuthors.map((author) => author.id),
-        ]),
-        topic_ids: uniqueIds([
-          ...prev.topic_ids,
-          ...extractedTopics.map((topic) => topic.id),
-        ]),
-        keyword_ids: uniqueIds([
-          ...prev.keyword_ids,
-          ...extractedKeywords.map((keyword) => keyword.id),
-        ]),
+
+        // Важно: эти значения реально подставляются в форму,
+        // но НЕ создаются в справочниках при выборе PDF.
+        // Они будут сохранены через get_or_create только после нажатия
+        // "Создать публикацию".
+        author_names: extracted.authors.join("; "),
+        topic_names: extracted.topics.join("; "),
+        keyword_names: extracted.keywords.join("; "),
       }));
 
       setMetadataMessage(
@@ -330,6 +299,19 @@ export function PublicationCreatePage() {
               buttonText="+ Добавить автора"
               onCreate={handleCreateAuthor}
             />
+
+            <label>
+              Авторы из PDF
+              <textarea
+                rows={3}
+                value={formData.author_names}
+                onChange={(event) => updateForm("author_names", event.target.value)}
+                placeholder="E. I. Dementerova; I. V. Levitsky; Иванов И.И."
+              />
+              <span className="muted">
+                Эти данные автоматически подставляются из PDF. Отредактируйте список перед сохранением.
+              </span>
+            </label>
           </div>
 
           <div className="publication-form-section">
@@ -345,6 +327,19 @@ export function PublicationCreatePage() {
               buttonText="+ Добавить тему"
               onCreate={handleCreateTopic}
             />
+
+            <label>
+              Темы из PDF
+              <textarea
+                rows={2}
+                value={formData.topic_names}
+                onChange={(event) => updateForm("topic_names", event.target.value)}
+                placeholder="Геология; Базы данных"
+              />
+              <span className="muted">
+                Темы автоматически подбираются только из существующего справочника.
+              </span>
+            </label>
           </div>
 
           <div className="publication-form-section">
@@ -360,6 +355,19 @@ export function PublicationCreatePage() {
               buttonText="+ Добавить ключевое слово"
               onCreate={handleCreateKeyword}
             />
+
+            <label>
+              Ключевые слова из PDF
+              <textarea
+                rows={3}
+                value={formData.keyword_names}
+                onChange={(event) => updateForm("keyword_names", event.target.value)}
+                placeholder="mafic rocks; geochemistry; semantic search"
+              />
+              <span className="muted">
+                Разделяйте значения точкой с запятой, запятой или переносом строки.
+              </span>
+            </label>
           </div>
 
           <div className="form-actions">

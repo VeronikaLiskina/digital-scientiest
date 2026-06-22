@@ -16,7 +16,7 @@ async def test_create_author(client):
     data = response.json()
 
     assert data["id"] is not None
-    assert data["full_name"] == "Иванов Иван Иванович"
+    assert data["full_name"] == "Иванов И.И."
     assert data["organization"] == "ИРНИТУ"
 
 
@@ -117,3 +117,29 @@ async def test_delete_author(client):
     get_response = await client.get(f"/api/authors/{author_id}")
 
     assert get_response.status_code == 404
+
+@pytest.mark.asyncio
+async def test_create_author_does_not_duplicate_by_initials(client):
+    first_response = await client.post(
+        "/api/authors",
+        json={
+            "full_name": "Иванов А.В.",
+            "organization": "ИРНИТУ",
+        },
+    )
+    assert first_response.status_code == 201
+
+    second_response = await client.post(
+        "/api/authors",
+        json={
+            "full_name": "Иванов Алексей В.",
+            "organization": "ИРНИТУ",
+        },
+    )
+    assert second_response.status_code == 201
+
+    assert second_response.json()["id"] == first_response.json()["id"]
+
+    authors_response = await client.get("/api/authors")
+    assert authors_response.status_code == 200
+    assert len(authors_response.json()) == 1

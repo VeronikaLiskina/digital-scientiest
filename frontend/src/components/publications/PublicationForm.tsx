@@ -68,6 +68,9 @@ export function PublicationForm({ authors, topics, keywords }: Props) {
         author_ids: form.author_ids,
         topic_ids: form.topic_ids,
         keyword_ids: form.keyword_ids,
+        author_names: "",
+        topic_names: "",
+        keyword_names: "",
       };
 
       const created = await publicationsApi.create(payload);

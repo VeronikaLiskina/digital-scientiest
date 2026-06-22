@@ -4,17 +4,15 @@ import { Link } from "react-router-dom";
 import { authorsApi } from "../api/authorsApi";
 import { keywordsApi } from "../api/keywordsApi";
 import { publicationsApi, type PublicationsFilters } from "../api/publicationsApi";
-import { topicsApi } from "../api/topicsApi";
 import { ListTitle } from "../components/common/ListTitle";
 import { PageHeader } from "../components/common/PageHeader";
 import { StatusBadge } from "../components/common/StatusBadge";
-import type { Author, Keyword, Publication, Topic } from "../types/entities";
+import type { Author, Keyword, Publication } from "../types/entities";
 import { getPublicationTypeLabel } from "../utils/publicationTypes";
 
 export function PublicationsPage() {
   const [publications, setPublications] = useState<Publication[]>([]);
   const [authors, setAuthors] = useState<Author[]>([]);
-  const [topics, setTopics] = useState<Topic[]>([]);
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [filters, setFilters] = useState<PublicationsFilters>({});
   const [error, setError] = useState("");
@@ -26,10 +24,9 @@ export function PublicationsPage() {
   }
 
   useEffect(() => {
-    Promise.all([authorsApi.getAll(), topicsApi.getAll(), keywordsApi.getAll()])
-      .then(([authorsData, topicsData, keywordsData]) => {
+    Promise.all([authorsApi.getAll(), keywordsApi.getAll()])
+      .then(([authorsData, keywordsData]) => {
         setAuthors(authorsData);
-        setTopics(topicsData);
         setKeywords(keywordsData);
       })
       .catch(() => setError("Не удалось загрузить справочники"));
@@ -119,22 +116,6 @@ export function PublicationsPage() {
           </select>
 
           <select
-            value={filters.topic_id ?? ""}
-            onChange={(event) =>
-              handleFilterChange({ ...filters, topic_id: event.target.value }).catch(() =>
-                setError("Не удалось применить фильтры"),
-              )
-            }
-          >
-            <option value="">Тема</option>
-            {topics.map((topic) => (
-              <option key={topic.id} value={topic.id}>
-                {topic.name}
-              </option>
-            ))}
-          </select>
-
-          <select
             value={filters.keyword_id ?? ""}
             onChange={(event) =>
               handleFilterChange({ ...filters, keyword_id: event.target.value }).catch(() =>
@@ -161,7 +142,6 @@ export function PublicationsPage() {
                 <th>Год</th>
                 <th>Тип</th>
                 <th>Авторы</th>
-                <th>Темы</th>
                 <th>Статус</th>
                 <th>Действия</th>
               </tr>
@@ -174,7 +154,6 @@ export function PublicationsPage() {
                   <td>{publication.year ?? "—"}</td>
                   <td>{getPublicationTypeLabel(publication.publication_type)}</td>
                   <td>{publication.authors.map((author) => author.full_name).join(", ") || "—"}</td>
-                  <td>{publication.topics.map((topic) => topic.name).join(", ") || "—"}</td>
                   <td>
                     <StatusBadge value={publication.status} />
                   </td>
@@ -197,7 +176,7 @@ export function PublicationsPage() {
 
               {!isLoading && !publications.length && (
                 <tr>
-                  <td colSpan={7} className="empty">
+                  <td colSpan={6} className="empty">
                     Публикации пока не добавлены.
                   </td>
                 </tr>
@@ -205,7 +184,7 @@ export function PublicationsPage() {
 
               {isLoading && (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={6} className="muted">
                     Загрузка...
                   </td>
                 </tr>

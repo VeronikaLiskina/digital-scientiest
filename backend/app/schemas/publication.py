@@ -20,6 +20,12 @@ class PublicationCreate(PublicationBase):
     topic_ids: list[int] = []
     keyword_ids: list[int] = []
 
+    # Имена из автозаполненных полей формы.
+    # Они превращаются в записи справочников только на финальном сохранении.
+    author_names: list[str] = []
+    topic_names: list[str] = []
+    keyword_names: list[str] = []
+
 
 class PublicationUpdate(BaseModel):
     title: str | None = None

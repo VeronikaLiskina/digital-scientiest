@@ -25,6 +25,9 @@ const emptyForm: PublicationFormData = {
   author_ids: [],
   topic_ids: [],
   keyword_ids: [],
+  author_names: "",
+  topic_names: "",
+  keyword_names: "",
 };
 
 export function PublicationEditPage() {
@@ -70,6 +73,9 @@ export function PublicationEditPage() {
           author_ids: publication.authors.map((author) => author.id),
           topic_ids: publication.topics.map((topic) => topic.id),
           keyword_ids: publication.keywords.map((keyword) => keyword.id),
+          author_names: "",
+          topic_names: "",
+          keyword_names: "",
         });
       })
       .catch((err) => {

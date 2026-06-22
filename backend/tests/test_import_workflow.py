@@ -102,3 +102,33 @@ async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existin
 
     files = (await client.get("/api/source-files")).json()
     assert files == []
+
+
+@pytest.mark.asyncio
+async def test_create_publication_resolves_confirmed_names_only_on_submit(client):
+    response = await client.post(
+        "/api/publications",
+        json={
+            "title": "Публикация после проверки PDF",
+            "year": 2026,
+            "language": "ru",
+            "publication_type": "article",
+            "status": "draft",
+            "author_ids": [],
+            "topic_ids": [],
+            "keyword_ids": [],
+            "author_names": ["Иванов И. И.", "Иванов И.И."],
+            "topic_names": ["Искусственный интеллект"],
+            "keyword_names": ["RAG", " rag "],
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+    assert len(data["authors"]) == 1
+    assert data["authors"][0]["full_name"] == "Иванов И. И."
+    assert len(data["topics"]) == 1
+    assert data["topics"][0]["name"] == "Искусственный интеллект"
+    assert len(data["keywords"]) == 1
+    assert data["keywords"][0]["name"] == "RAG"

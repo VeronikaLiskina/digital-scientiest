@@ -5,8 +5,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.models.author import Author
 from app.schemas.author import AuthorCreate, AuthorRead, AuthorUpdate
-from app.services.author_resolver import get_or_create_author
-from app.utils.normalization import normalize_author_name
+from app.services.author_resolver import find_author_by_identity, get_or_create_author
+from app.utils.normalization import format_author_display_name, normalize_author_name
 
 
 router = APIRouter(prefix="/authors", tags=["Authors"])
@@ -68,21 +68,17 @@ async def update_author(
     update_data = data.model_dump(exclude_unset=True)
 
     if "full_name" in update_data and update_data["full_name"] is not None:
-        normalized_name = normalize_author_name(update_data["full_name"])
-        duplicate_result = await db.execute(
-            select(Author).where(
-                Author.normalized_name == normalized_name,
-                Author.id != author_id,
-            )
-        )
-        duplicate = duplicate_result.scalar_one_or_none()
+        display_name = format_author_display_name(update_data["full_name"]) or update_data["full_name"].strip()
+        normalized_name = normalize_author_name(display_name)
+        duplicate = await find_author_by_identity(db, display_name)
 
-        if duplicate is not None:
+        if duplicate is not None and duplicate.id != author_id:
             raise HTTPException(
                 status_code=400,
                 detail="Автор с таким ФИО уже существует",
             )
 
+        update_data["full_name"] = display_name
         author.normalized_name = normalized_name
 
     for field, value in update_data.items():

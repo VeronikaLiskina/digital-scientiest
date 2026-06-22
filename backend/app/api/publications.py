@@ -1,4 +1,5 @@
 import json
+import re
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,9 @@ from app.models.source_file import SourceFile
 from app.models.topic import Topic
 from app.schemas.publication import PublicationCreate, PublicationRead, PublicationUpdate
 from app.services.pdf_import import save_uploaded_pdf_as_source_file
+from app.services.author_resolver import get_or_create_author
+from app.services.keyword_resolver import get_or_create_keyword
+from app.services.topic_resolver import get_or_create_topic
 
 
 router = APIRouter(prefix="/publications", tags=["Publications"])
@@ -120,6 +124,96 @@ def parse_ids(value: str | None) -> list[int]:
         )
 
 
+def parse_names(value: str | None) -> list[str]:
+    """
+    Для имен, пришедших из автозаполненных полей формы.
+
+    Поддерживает ввод через точку с запятой, переносы строк и запятые.
+    Эти значения НЕ создаются при выборе PDF. Они создаются/находятся
+    только при финальном сохранении публикации.
+    """
+
+    if not value:
+        return []
+
+    names: list[str] = []
+    seen: set[str] = set()
+
+    for item in re.split(r";|,|\n", value):
+        name = item.strip()
+
+        if not name:
+            continue
+
+        normalized = name.lower().replace("ё", "е")
+
+        if normalized in seen:
+            continue
+
+        seen.add(normalized)
+        names.append(name)
+
+    return names
+
+
+def dedupe_by_id(items):
+    result = []
+    seen_ids = set()
+
+    for item in items:
+        item_id = getattr(item, "id", None)
+
+        if item_id in seen_ids:
+            continue
+
+        seen_ids.add(item_id)
+        result.append(item)
+
+    return result
+
+
+async def resolve_authors(
+    db: AsyncSession,
+    *,
+    ids: list[int],
+    names: list[str],
+) -> list[Author]:
+    authors = await get_items_by_ids(db, Author, ids)
+
+    for name in names:
+        authors.append(await get_or_create_author(db, name))
+
+    return dedupe_by_id(authors)
+
+
+async def resolve_topics(
+    db: AsyncSession,
+    *,
+    ids: list[int],
+    names: list[str],
+) -> list[Topic]:
+    topics = await get_items_by_ids(db, Topic, ids)
+
+    for name in names:
+        topics.append(await get_or_create_topic(db, name))
+
+    return dedupe_by_id(topics)
+
+
+async def resolve_keywords(
+    db: AsyncSession,
+    *,
+    ids: list[int],
+    names: list[str],
+) -> list[Keyword]:
+    keywords = await get_items_by_ids(db, Keyword, ids)
+
+    for name in names:
+        keywords.append(await get_or_create_keyword(db, name))
+
+    return dedupe_by_id(keywords)
+
+
 def normalize_publication_type(value: str) -> str:
     """
     Чтобы backend нормально принимал и английские значения,
@@ -195,9 +289,21 @@ async def create_publication(
 ):
     await check_source_file_exists(db, data.source_file_id)
 
-    authors = await get_items_by_ids(db, Author, data.author_ids)
-    topics = await get_items_by_ids(db, Topic, data.topic_ids)
-    keywords = await get_items_by_ids(db, Keyword, data.keyword_ids)
+    authors = await resolve_authors(
+        db,
+        ids=data.author_ids,
+        names=data.author_names,
+    )
+    topics = await resolve_topics(
+        db,
+        ids=data.topic_ids,
+        names=data.topic_names,
+    )
+    keywords = await resolve_keywords(
+        db,
+        ids=data.keyword_ids,
+        names=data.keyword_names,
+    )
 
     publication = Publication(
         title=data.title,
@@ -236,6 +342,10 @@ async def create_publication_with_file(
     topic_ids: str | None = Form(None),
     keyword_ids: str | None = Form(None),
 
+    author_names: str | None = Form(None),
+    topic_names: str | None = Form(None),
+    keyword_names: str | None = Form(None),
+
     file: UploadFile = File(...),
 
     db: AsyncSession = Depends(get_db),
@@ -254,9 +364,25 @@ async def create_publication_with_file(
     parsed_topic_ids = parse_ids(topic_ids)
     parsed_keyword_ids = parse_ids(keyword_ids)
 
-    authors = await get_items_by_ids(db, Author, parsed_author_ids)
-    topics = await get_items_by_ids(db, Topic, parsed_topic_ids)
-    keywords = await get_items_by_ids(db, Keyword, parsed_keyword_ids)
+    parsed_author_names = parse_names(author_names)
+    parsed_topic_names = parse_names(topic_names)
+    parsed_keyword_names = parse_names(keyword_names)
+
+    authors = await resolve_authors(
+        db,
+        ids=parsed_author_ids,
+        names=parsed_author_names,
+    )
+    topics = await resolve_topics(
+        db,
+        ids=parsed_topic_ids,
+        names=parsed_topic_names,
+    )
+    keywords = await resolve_keywords(
+        db,
+        ids=parsed_keyword_ids,
+        names=parsed_keyword_names,
+    )
 
     publication = Publication(
         title=title,

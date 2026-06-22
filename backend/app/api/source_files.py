@@ -94,7 +94,10 @@ async def extract_pdf_metadata(
             extracted=None,
         )
 
-    extracted = extract_publication_metadata_from_bytes(content)
+    extracted = extract_publication_metadata_from_bytes(
+        content,
+        original_name=file.filename,
+    )
     extracted.topics = await suggest_topic_names(
         db=db,
         title=extracted.title,
