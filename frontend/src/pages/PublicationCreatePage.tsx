@@ -45,6 +45,54 @@ function mergeById<T extends { id: number }>(current: T[], incoming: T[]) {
   return Array.from(map.values());
 }
 
+type CatalogMatch = {
+  id: number;
+  name: string;
+  extracted_name?: string;
+};
+
+type ExtractedWithMatches = {
+  title?: string | null;
+  year?: number | null;
+  language?: string | null;
+  publication_type?: string | null;
+  doi?: string | null;
+
+  authors?: string[];
+  topics?: string[];
+  keywords?: string[];
+
+  matched_author_ids?: number[];
+  matched_authors?: CatalogMatch[];
+  new_authors?: string[];
+
+  matched_topic_ids?: number[];
+  matched_topics?: CatalogMatch[];
+  new_topics?: string[];
+
+  matched_keyword_ids?: number[];
+  matched_keywords?: CatalogMatch[];
+  new_keywords?: string[];
+};
+
+function getMatchedIds(ids?: number[], matches?: CatalogMatch[]) {
+  if (ids?.length) {
+    return ids;
+  }
+
+  return matches?.map((item) => item.id) ?? [];
+}
+
+function getNewNames(newNames?: string[], fallbackNames?: string[]) {
+  if (newNames !== undefined) {
+    return newNames;
+  }
+
+  // fallback нужен, чтобы форма не ломалась со старым backend,
+  // где еще не было new_authors/new_keywords/new_topics.
+  return fallbackNames ?? [];
+}
+
 export function PublicationCreatePage() {
   const navigate = useNavigate();
 
@@ -116,12 +164,63 @@ export function PublicationCreatePage() {
         return;
       }
 
-      const extracted = preview.extracted;
+      const extracted = preview.extracted as ExtractedWithMatches | null;
 
       if (!extracted) {
         setMetadataMessage("PDF выбран. Данные для автозаполнения не найдены.");
         return;
       }
+
+      const matchedAuthorIds = getMatchedIds(extracted.matched_author_ids, extracted.matched_authors);
+      const matchedTopicIds = getMatchedIds(extracted.matched_topic_ids, extracted.matched_topics);
+      const matchedKeywordIds = getMatchedIds(extracted.matched_keyword_ids, extracted.matched_keywords);
+
+      const newAuthorNames = getNewNames(extracted.new_authors, extracted.authors);
+      const newTopicNames = getNewNames(extracted.new_topics, extracted.topics);
+      const newKeywordNames = getNewNames(extracted.new_keywords, extracted.keywords);
+
+      // Если matched_* есть в ответе, но этих записей еще нет в options,
+      // добавляем их локально, чтобы MultiSelect смог визуально показать выбор.
+      setAuthors((prev) =>
+        mergeById(
+          prev,
+          (extracted.matched_authors ?? []).map(
+            (author) =>
+              ({
+                id: author.id,
+                full_name: author.name,
+                organization: "",
+              }) as Author,
+          ),
+        ),
+      );
+
+      setTopics((prev) =>
+        mergeById(
+          prev,
+          (extracted.matched_topics ?? []).map(
+            (topic) =>
+              ({
+                id: topic.id,
+                name: topic.name,
+                description: "",
+              }) as Topic,
+          ),
+        ),
+      );
+
+      setKeywords((prev) =>
+        mergeById(
+          prev,
+          (extracted.matched_keywords ?? []).map(
+            (keyword) =>
+              ({
+                id: keyword.id,
+                name: keyword.name,
+              }) as Keyword,
+          ),
+        ),
+      );
 
       setFormData((prev) => ({
         ...prev,
@@ -132,17 +231,21 @@ export function PublicationCreatePage() {
         doi: extracted.doi || prev.doi,
         source_file_id: "",
 
-        // Важно: эти значения реально подставляются в форму,
-        // но НЕ создаются в справочниках при выборе PDF.
+        // Уже существующие записи сразу отмечаются в MultiSelect.
+        author_ids: uniqueIds([...prev.author_ids, ...matchedAuthorIds]),
+        topic_ids: uniqueIds([...prev.topic_ids, ...matchedTopicIds]),
+        keyword_ids: uniqueIds([...prev.keyword_ids, ...matchedKeywordIds]),
+
+        // Новые значения НЕ создаются в справочниках при выборе PDF.
         // Они будут сохранены через get_or_create только после нажатия
         // "Создать публикацию".
-        author_names: extracted.authors.join("; "),
-        topic_names: extracted.topics.join("; "),
-        keyword_names: extracted.keywords.join("; "),
+        author_names: newAuthorNames.join("; "),
+        topic_names: newTopicNames.join("; "),
+        keyword_names: newKeywordNames.join("; "),
       }));
 
       setMetadataMessage(
-        "PDF выбран. Если системе удалось распознать данные, они уже подставлены в форму. Проверьте их перед сохранением.",
+        `PDF выбран. Найдено в БД: авторов — ${matchedAuthorIds.length}, тем — ${matchedTopicIds.length}, ключевых слов — ${matchedKeywordIds.length}. Новые значения подставлены в поля ниже — проверьте их перед сохранением.`,
       );
     } catch (err) {
       setMetadataMessage("");
@@ -306,10 +409,10 @@ export function PublicationCreatePage() {
                 rows={3}
                 value={formData.author_names}
                 onChange={(event) => updateForm("author_names", event.target.value)}
-                placeholder="E. I. Dementerova; I. V. Levitsky; Иванов И.И."
+                placeholder="Демонтерова Е.И.; Левицкий И.В.; Иванов А.В."
               />
               <span className="muted">
-                Эти данные автоматически подставляются из PDF. Отредактируйте список перед сохранением.
+                Здесь остаются только новые авторы, которых backend не нашёл в БД. Совпавшие авторы уже отмечены выше.
               </span>
             </label>
           </div>
@@ -334,10 +437,10 @@ export function PublicationCreatePage() {
                 rows={2}
                 value={formData.topic_names}
                 onChange={(event) => updateForm("topic_names", event.target.value)}
-                placeholder="Геология; Базы данных"
+                placeholder="Островодужные базальты; Платиновая группа"
               />
               <span className="muted">
-                Темы автоматически подбираются только из существующего справочника.
+                Совпавшие темы отмечаются выше. Новые темы можно отредактировать перед сохранением.
               </span>
             </label>
           </div>
@@ -362,7 +465,7 @@ export function PublicationCreatePage() {
                 rows={3}
                 value={formData.keyword_names}
                 onChange={(event) => updateForm("keyword_names", event.target.value)}
-                placeholder="mafic rocks; geochemistry; semantic search"
+                placeholder="островодужные базальты; элементы платиновой группы; geochemistry"
               />
               <span className="muted">
                 Разделяйте значения точкой с запятой, запятой или переносом строки.

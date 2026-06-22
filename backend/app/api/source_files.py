@@ -2,12 +2,13 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import exc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
 from app.models.source_file import SourceFile
 from app.schemas.source_file import (
+    CatalogMatchRead,
     ExtractedPublicationMetadataRead,
     SourceFileCreate,
     SourceFileMetadataPreview,
@@ -22,9 +23,46 @@ from app.services.pdf_import import (
 )
 from app.services.pdf_processing import process_pdf_file
 from app.services.topic_suggester import suggest_topic_names
+from app.services.metadata_matcher import (
+    CatalogMatchResult,
+    match_existing_authors,
+    match_existing_keywords,
+    match_existing_topics,
+)
+from app.utils import file_hash
 from app.utils.file_hash import calculate_file_hash
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
+
+
+def _merge_names(values: list[str]) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+
+    for value in values:
+        value = value.strip()
+        if not value:
+            continue
+
+        key = value.lower().replace("ё", "е")
+        if key in seen:
+            continue
+
+        seen.add(key)
+        result.append(value)
+
+    return result
+
+
+def _to_catalog_match_reads(result: CatalogMatchResult) -> list[CatalogMatchRead]:
+    return [
+        CatalogMatchRead(
+            id=item.id,
+            name=item.name,
+            extracted_name=item.extracted_name,
+        )
+        for item in result.matches
+    ]
 
 
 @router.post("", response_model=SourceFileRead, status_code=status.HTTP_201_CREATED)
@@ -72,8 +110,9 @@ async def extract_pdf_metadata(
     - проверяет PDF;
     - считает hash;
     - предупреждает о дубле PDF;
-    - пытается вытащить title/year/language/doi/authors/keywords;
-    - подбирает темы только из существующего справочника topics.
+    - пытается вытащить title/year/language/doi/authors/keywords/topics;
+    - ищет соответствия в уже существующих авторах, ключевых словах и темах;
+    - возвращает id найденных записей, чтобы frontend мог сразу отметить их в форме.
     """
 
     validate_pdf_upload(file)
@@ -94,15 +133,37 @@ async def extract_pdf_metadata(
             extracted=None,
         )
 
-    extracted = extract_publication_metadata_from_bytes(
+    try:
+        extracted = extract_publication_metadata_from_bytes(
         content,
         original_name=file.filename,
+        )
+    except Exception as exc:
+        return SourceFileMetadataPreview(
+            status="metadata_error",
+            file_hash=file_hash,
+            message=f"PDF выбран, но не удалось извлечь метаданные: {exc}",
+            extracted=None,
     )
-    extracted.topics = await suggest_topic_names(
+
+    if extracted is None:
+        return SourceFileMetadataPreview(
+            status="metadata_error",
+            file_hash=file_hash,
+            message="PDF выбран, но метаданные не были извлечены.",
+            extracted=None,
+        )
+
+    existing_topic_suggestions = await suggest_topic_names(
         db=db,
         title=extracted.title,
-        keywords=extracted.keywords,
+        keywords=extracted.keywords,    
     )
+    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])
+
+    author_match_result = await match_existing_authors(db, extracted.authors)
+    keyword_match_result = await match_existing_keywords(db, extracted.keywords)
+    topic_match_result = await match_existing_topics(db, extracted.topics)
 
     return SourceFileMetadataPreview(
         status="metadata_extracted",
@@ -116,6 +177,15 @@ async def extract_pdf_metadata(
             authors=extracted.authors,
             keywords=extracted.keywords,
             topics=extracted.topics,
+            matched_authors=_to_catalog_match_reads(author_match_result),
+            matched_author_ids=[item.id for item in author_match_result.matches],
+            new_authors=author_match_result.new_names,
+            matched_keywords=_to_catalog_match_reads(keyword_match_result),
+            matched_keyword_ids=[item.id for item in keyword_match_result.matches],
+            new_keywords=keyword_match_result.new_names,
+            matched_topics=_to_catalog_match_reads(topic_match_result),
+            matched_topic_ids=[item.id for item in topic_match_result.matches],
+            new_topics=topic_match_result.new_names,
         ),
     )
 

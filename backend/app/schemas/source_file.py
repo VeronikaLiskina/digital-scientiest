@@ -35,15 +35,37 @@ class SourceFileRead(SourceFileBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class CatalogMatchRead(BaseModel):
+    id: int
+    name: str
+    extracted_name: str
+
+
 class ExtractedPublicationMetadataRead(BaseModel):
     title: str | None = None
     year: int | None = None
     language: str | None = None
     publication_type: str | None = "article"
     doi: str | None = None
+
+    # Все извлеченные значения после нормализации.
     authors: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
     topics: list[str] = Field(default_factory=list)
+
+    # Уже существующие записи справочников. Frontend может сразу отметить эти id
+    # в MultiSelect, не создавая дубли.
+    matched_authors: list[CatalogMatchRead] = Field(default_factory=list)
+    matched_author_ids: list[int] = Field(default_factory=list)
+    new_authors: list[str] = Field(default_factory=list)
+
+    matched_keywords: list[CatalogMatchRead] = Field(default_factory=list)
+    matched_keyword_ids: list[int] = Field(default_factory=list)
+    new_keywords: list[str] = Field(default_factory=list)
+
+    matched_topics: list[CatalogMatchRead] = Field(default_factory=list)
+    matched_topic_ids: list[int] = Field(default_factory=list)
+    new_topics: list[str] = Field(default_factory=list)
 
 
 class SourceFileMetadataPreview(BaseModel):
