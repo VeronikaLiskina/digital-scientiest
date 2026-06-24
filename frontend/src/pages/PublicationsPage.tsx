@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
 import { authorsApi } from "../api/authorsApi";
@@ -67,6 +67,9 @@ export function PublicationsPage() {
           <div className="form-actions">
             <Link className="button button_secondary" to="/admin">
               На главную
+            </Link>
+            <Link className="button button_secondary" to="/admin/publications/import">
+              Добавить несколько публикаций
             </Link>
             <Link className="button" to="/admin/publications/new">
               Добавить публикацию
@@ -196,3 +199,4 @@ export function PublicationsPage() {
     </section>
   );
 }
+

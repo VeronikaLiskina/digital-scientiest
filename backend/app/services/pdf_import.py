@@ -25,6 +25,40 @@ MORPH = pymorphy3.MorphAnalyzer() if pymorphy3 is not None else None
 
 DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
+LATIN_FULL_NAME_RE = re.compile(
+    r"\b([A-Z][a-zA-Z'’\-]{2,})\s+([A-Z][a-zA-Z'’\-]{2,})\b"
+)
+UUID_FILENAME_RE = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+TECHNICAL_FILENAME_RE = re.compile(
+    r"^(?:download|fulltext|full-text|viewcontent|document|file|article|paper|"
+    r"publication|manuscript|untitled|scan|pdf|index)(?:[-_\s]?\d*)?$",
+    re.IGNORECASE,
+)
+DOI_FILENAME_RE = re.compile(r"^(?:doi[-_\s]*)?10[._-]\d{4,9}[._/-]", re.IGNORECASE)
+HEXISH_FILENAME_RE = re.compile(r"^[0-9a-f]{16,}$", re.IGNORECASE)
+NUMBERED_TRANSLIT_FILENAME_RE = re.compile(r"^\d{2,4}[-_\s]+[a-z][a-z0-9_\-\s]+$", re.IGNORECASE)
+NUMBERED_PREFIX_FILENAME_RE = re.compile(r"^\d{1,4}[-_\s]+")
+DATE_FILENAME_RE = re.compile(r"\b(?:19\d{2}|20\d{2})[-_.]?\d{1,2}[-_.]?\d{1,2}\b")
+RANDOM_ALNUM_FILENAME_RE = re.compile(r"\b(?=[a-z0-9]*[a-z])(?=[a-z0-9]*\d)[a-z0-9]{5,}\b", re.IGNORECASE)
+TRANSLIT_MARKERS_RE = re.compile(
+    r"(?:iy|yy|aya|ogo|ego|skiy|ts|sh|ch|kh|zh|ranne|vysoko|kratona)",
+    re.IGNORECASE,
+)
+REFERENCES_RE = re.compile(
+    r"^(references|bibliography|литература|список\s+литературы)\b",
+    re.IGNORECASE,
+)
+CONTENTS_RE = re.compile(
+    r"^(contents|table\s+of\s+contents|содержание)\b",
+    re.IGNORECASE,
+)
+AUTHOR_TECHNICAL_RE = re.compile(
+    r"(@|https?://|www\.|orcid|doi\b|e-mail|email|corresponding\s+author)",
+    re.IGNORECASE,
+)
 SECTION_START_RE = re.compile(
     r"^(abstract|аннотация|keywords|key\s*words|ключевые\s+слова|"
     r"1\.\s*introduction|introduction|введение|article\s+info)\b",
@@ -71,6 +105,7 @@ RU_STOP_WORDS = {
     "может", "могут", "однако", "также", "таким", "образом", "которые", "которых",
     "вследствие", "согласно", "например", "авторы", "автор", "таблица", "рисунок", "рис",
     "том", "номер", "страница", "известно", "состав", "составы", "содержание", "значения",
+    "млн",
 }
 
 EN_STOP_WORDS = {
@@ -79,15 +114,59 @@ EN_STOP_WORDS = {
     "had", "can", "may", "also", "such", "however", "therefore", "using", "based", "study",
     "studies", "article", "paper", "results", "data", "sample", "samples", "table", "figure",
     "fig", "shown", "obtained", "analysis", "analyses", "content", "contents", "value", "values",
+    "due", "our", "their", "they", "them", "not", "argued", "doubted", "converted", "conversions",
+    "two", "synthetic", "ice", "oes",
 }
 
 PHRASE_BAD_WORDS_RE = re.compile(
-    r"(abstract|keywords|introduction|references|copyright|license|citation|"
+    r"(abstract|keywords|key\s*words|introduction|references|copyright|license|citation|"
+    r"article\s+info|received|accepted|published|journal|volume|vol\.|issue|"
+    r"doi|issn|isbn|udc|e-mail|email|orcid|"
+    r"replying\s+to|reply\s+to|"
     r"аннотация|ключевые\s+слова|введение|список\s+литературы|литература|"
-    r"поступило|представлено|таблица|рисунок|рис\.|"
+    r"поступило|представлено|получено|принято|опубликовано|таблица|рисунок|рис\.|"
+    r"удк|doi|issn|том|номер|страница|выпуск|издательство|"
     r"доклады\s+академии\s+наук|академии\s+наук|"
-    r"сибирского\s+отделения|российской\s+академии\s+наук)",
+    r"сибирского\s+отделения|российской\s+академии\s+наук|"
+    r"российской\s+академии|сибирское\s+отделение)",
     re.IGNORECASE,
+)
+
+CAPTION_OR_TABLE_RE = re.compile(
+    r"^\s*(?:fig(?:ure)?\.?|table|рис\.?|рисунок|табл\.?|таблица)\s*\d+",
+    re.IGNORECASE,
+)
+SERVICE_LINE_RE = re.compile(
+    r"^(?:удк|doi|issn|isbn|e-?mail|email|orcid|received|accepted|published|"
+    r"replying\s+to|поступило|представлено|принято|опубликовано|"
+    r"для\s+цитирования|for\s+citation)\b",
+    re.IGNORECASE,
+)
+ORG_OR_JOURNAL_RE = re.compile(
+    r"(институт|университет|академи[яи]\s+наук|сибирское\s+отделение|"
+    r"лаборатори[яи]|кафедра|факультет|министерство|федеральн|"
+    r"вестник|доклады|журнал|сборник|материалы\s+научн|"
+    r"institute|university|academy|department|faculty|journal|proceedings)",
+    re.IGNORECASE,
+)
+GENERIC_METADATA_PHRASES_RE = re.compile(
+    r"^(?:данные\s+исследовани[яй]|результаты\s+анализ[а-я]*|настоящая\s+работа|"
+    r"результаты\s+исследовани[яй]|данной\s+работ[ые]|полученные\s+данные|"
+    r"analysis\s+results|research\s+data|this\s+study|present\s+work)$",
+    re.IGNORECASE,
+)
+
+TOPIC_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("Магматизм", ("магмат", "magmat", "вулкан", "volcan", "базальт", "долерит", "кимберлит")),
+    ("Геохимия", ("геохим", "geochem", "изотоп", "isotope", "микроэлемент", "trace element")),
+    ("Геохронология", ("геохрон", "geochron", "u-pb", "la-icp-ms", "датирован", "циркон", "zircon")),
+    ("Палеомагнетизм", ("палеомаг", "paleomag")),
+    ("Сибирский кратон", ("сибирск", "siberian", "кратон", "craton")),
+    ("Метеоритное вещество", ("метеорит", "метеороид", "meteor", "абляцион", "ablation")),
+    ("Тектоника", ("тектоник", "tecton", "разлом", "fault")),
+    ("Геодинамика", ("геодинами", "geodynam")),
+    ("Петрология", ("петролог", "petrolog", "породы", "rocks")),
+    ("Минералогия", ("минерал", "mineral")),
 )
 
 # Слова, которые почти всегда означают, что строка — это тема/название/аннотация,
@@ -235,6 +314,9 @@ class ExtractedPublicationMetadata:
     authors: list[str]
     keywords: list[str]
     topics: list[str]
+    title_source: str = "unknown"
+    title_confidence: str = "low"
+    title_warning: str | None = None
 
 
 @dataclass
@@ -250,6 +332,7 @@ class TitleMatch:
     page_index: int
     line_index: int | None
     score: int
+    source: str = "pdf"
 
 
 def validate_pdf_upload(file: UploadFile) -> str:
@@ -411,10 +494,23 @@ def _extract_pages(file_path: Path, max_pages: int = 15) -> list[PageText]:
 
 
 def _filename_title(original_name: str | None) -> str | None:
+    title = _filename_title_candidate(original_name)
+
+    if title is None:
+        return None
+
+    if _filename_title_quality(title, raw_title=Path(original_name or "").stem) < 4:
+        return None
+
+    return title
+
+
+def _filename_title_candidate(original_name: str | None) -> str | None:
     if not original_name:
         return None
 
-    title = Path(original_name).stem
+    raw_title = Path(original_name).stem
+    title = raw_title
     title = re.sub(r"\s*\(\d+\)\s*$", "", title)
     title = re.sub(r"[_]+", " ", title)
     title = re.sub(r"\s+", " ", title).strip(" -–—")
@@ -424,10 +520,98 @@ def _filename_title(original_name: str | None) -> str | None:
     if title.lower().startswith("geological journal") and journal_match:
         title = journal_match.group(0).strip(" -")
 
-    if len(title) < 8:
-        return None
-
     return title
+
+
+def _filename_title_quality(title: str | None, *, raw_title: str | None = None) -> int:
+    if not title:
+        return 0
+
+    normalized = re.sub(r"\s+", " ", title).strip()
+    if len(normalized) < 8:
+        return 0
+
+    normalized_lower = normalized.lower()
+    compact = re.sub(r"[\s._-]+", "-", normalized_lower).strip("-")
+    raw_normalized_lower = re.sub(r"\s+", " ", raw_title or normalized).strip().lower()
+    raw_compact = re.sub(r"\s+", "", raw_normalized_lower)
+
+    separators_count = len(re.findall(r"[_-]", raw_title or normalized))
+
+    if UUID_FILENAME_RE.fullmatch(compact):
+        return 0
+
+    if HEXISH_FILENAME_RE.fullmatch(re.sub(r"[\s._-]+", "", normalized_lower)):
+        return 0
+
+    if DOI_FILENAME_RE.search(normalized_lower):
+        return 0
+
+    if TECHNICAL_FILENAME_RE.fullmatch(normalized_lower):
+        return 0
+
+    if re.fullmatch(
+        r"(?:article|file|document|scan|paper|pdf|download)[-_\s]*\d+",
+        raw_normalized_lower,
+    ):
+        return 0
+
+    if NUMBERED_PREFIX_FILENAME_RE.search(raw_normalized_lower):
+        return 0
+
+    if NUMBERED_TRANSLIT_FILENAME_RE.fullmatch(raw_normalized_lower):
+        return 0
+
+    if NUMBERED_TRANSLIT_FILENAME_RE.fullmatch(normalized_lower):
+        return 0
+
+    if DATE_FILENAME_RE.search(raw_compact):
+        return 0
+
+    if separators_count >= 3:
+        return 1
+
+    alpha_chars = re.findall(r"[A-Za-zА-Яа-яЁё]", normalized)
+    words = re.findall(r"[A-Za-zА-Яа-яЁё]{3,}", normalized)
+
+    if len(alpha_chars) < 8 or len(words) < 2:
+        return 0
+
+    digits = re.findall(r"\d", normalized)
+    if digits and len(digits) > len(alpha_chars):
+        return 1
+
+    if digits and RANDOM_ALNUM_FILENAME_RE.search(raw_normalized_lower):
+        return 1
+
+    has_original_spaces = bool(re.search(r"\s", raw_title or ""))
+    has_separator_slug = bool(re.search(r"[_-]", raw_title or ""))
+    if not has_original_spaces and has_separator_slug and TRANSLIT_MARKERS_RE.search(raw_normalized_lower):
+        return 1
+
+    if not has_original_spaces and has_separator_slug and len(words) >= 3:
+        return 2
+
+    score = 2
+
+    if len(words) >= 4:
+        score += 2
+    elif len(words) >= 3:
+        score += 1
+
+    if " " in normalized:
+        score += 1
+
+    if YEAR_RE.search(normalized):
+        score -= 1
+
+    if re.search(r"\b(?:supplement|appendix|presentation|slides|poster|draft|copy)\b", normalized_lower):
+        score -= 2
+
+    if len(normalized) > 180:
+        score -= 1
+
+    return max(score, 0)
 
 
 def _normalize_for_search(value: str) -> str:
@@ -462,32 +646,13 @@ def _should_prefer_filename_title(
     extracted_title: str | None,
     filename_title: str | None,
 ) -> bool:
-    if not filename_title:
+    if not filename_title or _filename_title_quality(filename_title) < 4:
         return False
 
     if not extracted_title:
         return True
 
     if _is_bad_extracted_title(extracted_title):
-        return True
-
-    filename_tokens = _title_tokens(filename_title)[:10]
-    overlap = _title_token_overlap(extracted_title, filename_title)
-
-    # В корпусе русские файлы обычно названы самим заголовком статьи.
-    # PDF-текст часто выдает битую строку с номером страницы или частью абзаца,
-    # поэтому для длинного осмысленного русского имени файла оно надежнее.
-    if re.search(r"[А-Яа-яЁё]", filename_title) and len(filename_tokens) >= 4:
-        return True
-
-    if len(filename_tokens) >= 3 and overlap < 2:
-        return True
-
-    low = extracted_title.lower()
-    if low.startswith(("research article", "article", "central asian orogenic belt")):
-        return True
-
-    if re.search(r"\b(ivan koulakov|mingqi liu|taras gerya|andrey jakovlev)\b", low):
         return True
 
     return False
@@ -585,8 +750,36 @@ def _extract_year(text: str, filename_title: str | None = None) -> int | None:
 
 def _line_looks_like_author_list(line: str) -> bool:
     cleaned = _normalize_author_source(line)
+
+    if _contains_ru_geography_name(cleaned):
+        return False
+
     author_like_hits = len(_find_author_candidates(cleaned))
-    return author_like_hits > 0
+
+    if author_like_hits > 0:
+        return True
+
+    return bool(
+        re.search(
+            r"(?:^|[,;]\s*)[A-Z]\.\s*[A-Z][a-zA-Z'’\-]{2,}",
+            cleaned,
+        )
+    )
+
+
+def _contains_ru_geography_name(value: str) -> bool:
+    if MORPH is None:
+        return False
+
+    for token in _phrase_tokens(value):
+        if not re.search(r"[а-яё]", token):
+            continue
+
+        parsed = _best_morph_parse(token)
+        if parsed is not None and "Geox" in parsed.tag:
+            return True
+
+    return False
 
 
 def _score_title_candidate(line: str, index: int) -> int:
@@ -681,7 +874,13 @@ def _extract_mdpi_title(lines: list[str], page_index: int) -> TitleMatch | None:
     return None
 
 
-def _extract_patent_title(lines: list[str], page_index: int, filename_title: str | None) -> TitleMatch | None:
+def _extract_patent_title(
+    lines: list[str],
+    page_index: int,
+    filename_title: str | None,
+    *,
+    allow_filename_fallback: bool = True,
+) -> TitleMatch | None:
     for index, line in enumerate(lines):
         if "(54)" in line:
             title = line.split("(54)", 1)[-1].strip(" .:-")
@@ -691,8 +890,14 @@ def _extract_patent_title(lines: list[str], page_index: int, filename_title: str
             if title:
                 return TitleMatch(title=title, page_index=page_index, line_index=index, score=18)
 
-    if filename_title:
-        return TitleMatch(title=filename_title, page_index=page_index, line_index=None, score=14)
+    if allow_filename_fallback and filename_title:
+        return TitleMatch(
+            title=filename_title,
+            page_index=page_index,
+            line_index=None,
+            score=14,
+            source="filename",
+        )
 
     return None
 
@@ -732,6 +937,111 @@ def _is_bad_extracted_title(title: str | None) -> bool:
     )
 
     return any(header in low for header in journal_headers)
+
+
+def _pdf_title_quality(title_match: TitleMatch | None) -> int:
+    if title_match is None or title_match.source != "pdf":
+        return 0
+
+    title = _normalize_title(title_match.title)
+    if not title:
+        return 0
+
+    low = title.lower()
+
+    if _is_bad_extracted_title(title):
+        return 0
+
+    if SECTION_START_RE.search(title) or REFERENCES_RE.search(title) or CONTENTS_RE.search(title):
+        return 0
+
+    if SERVICE_LINE_RE.search(title) or CAPTION_OR_TABLE_RE.search(title):
+        return 0
+
+    if AFFILIATION_RE.search(title) or ORG_OR_JOURNAL_RE.search(title):
+        return 0
+
+    if _line_looks_like_author_list(title):
+        return 0
+
+    words = re.findall(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\-]{2,}", title)
+    if len(words) < 3:
+        return 2
+
+    digits = re.findall(r"\d", title)
+    alpha_chars = re.findall(r"[A-Za-zА-Яа-яЁё]", title)
+    if alpha_chars and len(digits) > len(alpha_chars) / 2:
+        return 2
+
+    score = title_match.score
+
+    if len(words) >= 4:
+        score += 2
+
+    if title_match.page_index == 0:
+        score += 1
+    elif title_match.page_index <= 2:
+        score -= 1
+    else:
+        score -= 3
+
+    if title_match.line_index is not None and title_match.line_index <= 8:
+        score += 1
+
+    if low.startswith(("abstract", "аннотация", "keywords", "ключевые слова", "references", "литература")):
+        score -= 8
+
+    if len(title) > 240:
+        score -= 3
+
+    return max(0, min(score, 10))
+
+
+def _title_confidence(quality: int) -> str:
+    if quality >= 8:
+        return "high"
+    if quality >= 5:
+        return "medium"
+    return "low"
+
+
+def _select_title(
+    pdf_title_match: TitleMatch | None,
+    *,
+    filename_title: str | None,
+    filename_quality: int,
+) -> tuple[str | None, str, str, str | None]:
+    pdf_quality = _pdf_title_quality(pdf_title_match)
+
+    if pdf_title_match is not None and pdf_quality >= max(filename_quality, 4):
+        confidence = _title_confidence(pdf_quality)
+        warning = None
+        if confidence != "high":
+            warning = "Название извлечено из PDF с невысокой уверенностью, проверьте корректность."
+        return pdf_title_match.title, "pdf", confidence, warning
+
+    if filename_title and filename_quality >= 4 and filename_quality > pdf_quality:
+        return (
+            filename_title,
+            "filename",
+            _title_confidence(filename_quality),
+            "Название взято из имени файла, проверьте корректность.",
+        )
+
+    if pdf_title_match is not None and pdf_quality > 0:
+        return (
+            pdf_title_match.title,
+            "pdf",
+            "low",
+            "Название извлечено из PDF с низкой уверенностью, проверьте и исправьте его.",
+        )
+
+    return (
+        None,
+        "unknown",
+        "low",
+        "Не удалось надежно извлечь название публикации из PDF или имени файла.",
+    )
 
 
 def _find_title_line_index(page: PageText, filename_title: str | None) -> int | None:
@@ -785,6 +1095,7 @@ def _extract_title_from_page(
     *,
     kind: str,
     filename_title: str | None,
+    allow_filename_fallback: bool = True,
 ) -> TitleMatch | None:
     if kind == "mdpi":
         mdpi_title = _extract_mdpi_title(page.lines, page.number)
@@ -792,7 +1103,12 @@ def _extract_title_from_page(
             return mdpi_title
 
     if kind == "patent":
-        patent_title = _extract_patent_title(page.lines, page.number, filename_title)
+        patent_title = _extract_patent_title(
+            page.lines,
+            page.number,
+            filename_title,
+            allow_filename_fallback=allow_filename_fallback,
+        )
         if patent_title is not None:
             return patent_title
 
@@ -832,12 +1148,26 @@ def _extract_title(
     *,
     kind: str,
     filename_title: str | None,
+    allow_filename_fallback: bool = True,
 ) -> TitleMatch | None:
     preferred_page = _find_page_by_filename_title(pages, filename_title)
 
     # Для больших сборников имя файла обычно и есть название нужной статьи.
     # Не пытаемся брать первый попавшийся заголовок из сборника — это часто чужая статья.
     if kind == "conference_collection" and filename_title:
+        if preferred_page is not None and preferred_page < len(pages):
+            title = _extract_title_from_page(
+                pages[preferred_page],
+                kind=kind,
+                filename_title=filename_title,
+                allow_filename_fallback=allow_filename_fallback,
+            )
+            if title is not None:
+                return title
+
+        if not allow_filename_fallback:
+            return None
+
         page_index = preferred_page if preferred_page is not None else 0
         line_index = None
 
@@ -849,6 +1179,7 @@ def _extract_title(
             page_index=page_index,
             line_index=line_index,
             score=16 if preferred_page is not None else 10,
+            source="filename",
         )
 
     ordered_pages = pages
@@ -861,14 +1192,19 @@ def _extract_title(
     best_match: TitleMatch | None = None
 
     for page in ordered_pages:
-        title = _extract_title_from_page(page, kind=kind, filename_title=filename_title)
+        title = _extract_title_from_page(
+            page,
+            kind=kind,
+            filename_title=filename_title,
+            allow_filename_fallback=allow_filename_fallback,
+        )
         if title is None:
             continue
 
         if best_match is None or title.score > best_match.score:
             best_match = title
 
-    if _should_prefer_filename_title(
+    if allow_filename_fallback and _should_prefer_filename_title(
         best_match.title if best_match is not None else None,
         filename_title,
     ):
@@ -883,6 +1219,7 @@ def _extract_title(
             page_index=page_index,
             line_index=line_index,
             score=8,
+            source="filename",
         )
 
     return best_match
@@ -892,12 +1229,42 @@ def _normalize_author_source(value: str) -> str:
     value = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", value)
     value = re.sub(r"\b([A-ZА-ЯЁ])\.([A-ZА-ЯЁ])\.", r"\1. \2.", value)
     value = re.sub(r"[¹²³⁴⁵⁶⁷⁸⁹⁰]+", "", value)
-    value = re.sub(r"\d+", "", value)
+    value = re.sub(r"([a-z])([A-Z])", r"\1 \2", value)
+    value = _repair_spaced_latin_words(value)
+    value = re.sub(r"\d+", ",", value)
+    value = re.sub(r"\b([A-Z][a-zA-Z'’\-]{2,})\s+([a-z])(?=\s*,|$)", r"\1\2", value)
     value = value.replace("*", " ").replace("†", " ").replace("‡", " ")
     value = value.replace("|", ",")
+    value = value.replace("&", ",")
     value = re.sub(r"\band\b", ",", value, flags=re.IGNORECASE)
+    value = re.sub(r"\s*,\s*", ", ", value)
     value = re.sub(r"\s+", " ", value)
-    return value.strip(" .;,:")
+    return value.strip(" ;,:")
+
+
+def _repair_spaced_latin_words(value: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        letters = match.group(0).split()
+        words: list[str] = []
+        current = ""
+
+        for letter in letters:
+            if letter[:1].isupper() and current:
+                words.append(current)
+                current = letter
+            else:
+                current += letter
+
+        if current:
+            words.append(current)
+
+        return " ".join(words)
+
+    return re.sub(
+        r"\b[A-Za-z](?:\s+[A-Za-z]){3,}\b",
+        replace,
+        value,
+    )
 
 
 def _make_author_alias_key(value: str) -> str:
@@ -954,6 +1321,32 @@ def _format_author_canonical(
     return f"{mapped_last_name} {first}{second}"
 
 
+def _looks_like_title_or_topic_phrase(value: str) -> bool:
+    low = value.lower().replace("ё", "е")
+    title_markers = (
+        "abstract",
+        "analysis",
+        "composition",
+        "data",
+        "dating",
+        "evolution",
+        "keywords",
+        "method",
+        "results",
+        "study",
+        "использован",
+        "исслед",
+        "метод",
+        "проявлен",
+        "реконструкц",
+        "результ",
+        "состав",
+        "циркон",
+    )
+
+    return any(marker in low for marker in title_markers)
+
+
 def format_author_display_name(raw_name: str) -> str | None:
     """
     Приводит автора к виду Иванов А.В.
@@ -967,7 +1360,13 @@ def format_author_display_name(raw_name: str) -> str | None:
 
     cleaned = _normalize_author_source(raw_name)
 
-    if not cleaned or AUTHOR_BAD_WORDS_RE.search(cleaned) or AFFILIATION_RE.search(cleaned):
+    if (
+        not cleaned
+        or AUTHOR_BAD_WORDS_RE.search(cleaned)
+        or AFFILIATION_RE.search(cleaned)
+        or AUTHOR_TECHNICAL_RE.search(cleaned)
+        or _looks_like_title_or_topic_phrase(cleaned)
+    ):
         return None
 
     alias_key = _make_author_alias_key(cleaned)
@@ -1016,7 +1415,7 @@ def format_author_display_name(raw_name: str) -> str | None:
         r"[A-Z][a-zA-Z'’\-ÿ]+\s+[A-Z][a-zA-Z'’\-]+",
         cleaned,
     ):
-        return None
+        return cleaned
 
     # Если распарсить не смогли, не выдумываем.
     return None
@@ -1072,7 +1471,13 @@ def _looks_like_author(value: str) -> bool:
     if len(value) < 3 or len(value) > 70:
         return False
 
-    if AUTHOR_BAD_WORDS_RE.search(value) or AFFILIATION_RE.search(value) or DOI_RE.search(value):
+    if (
+        AUTHOR_BAD_WORDS_RE.search(value)
+        or AFFILIATION_RE.search(value)
+        or DOI_RE.search(value)
+        or AUTHOR_TECHNICAL_RE.search(value)
+        or _looks_like_title_or_topic_phrase(value)
+    ):
         return False
 
     words = value.split()
@@ -1086,6 +1491,7 @@ def _looks_like_author(value: str) -> bool:
         re.fullmatch(r"[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+", value)
         or re.fullmatch(r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.", value)
         or re.fullmatch(r"[A-Z][a-zA-Z'’\-ÿ]+\s+[A-Z]\.\s*[A-Z][a-zA-Z'’\-]+", value)
+        or re.fullmatch(r"[A-Z][a-zA-Z'’\-ÿ]{2,}\s+[A-Z][a-zA-Z'’\-]{2,}", value)
         or re.fullmatch(r"[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+(?:\s+[А-ЯЁ][а-яё-]+)?", value)
     )
 
@@ -1125,7 +1531,10 @@ def _normalize_author_list(candidates: list[str]) -> list[str]:
 
 
 def _clean_author_line(line: str) -> str:
-    line = _clean_metadata_line(line)
+    line = line.replace("\u00a0", " ")
+    line = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", line)
+    line = re.sub(r"\s+", " ", line)
+    line = line.strip(" \t\n\r;,")
 
     # Частый формат старых русских статей:
     # © 2004 г. В. С. Антипин, ...
@@ -1144,7 +1553,7 @@ def _clean_author_line(line: str) -> str:
     line = line.replace("*", " ").replace("†", " ").replace("‡", " ")
 
     line = re.sub(r"\s+", " ", line)
-    return line.strip(" .;,:—-–")
+    return line.strip(" ;,:—-–")
 
 
 def _should_stop_author_block(line: str) -> bool:
@@ -1156,10 +1565,18 @@ def _should_stop_author_block(line: str) -> bool:
     if SECTION_START_RE.search(line):
         return True
 
+    if REFERENCES_RE.search(line) or CONTENTS_RE.search(line):
+        return True
+
+    if AUTHOR_TECHNICAL_RE.search(line):
+        return True
+
     if AFFILIATION_RE.search(line):
         return True
 
     if low_line.startswith((
+        "replying to",
+        "reply to",
         "поступило",
         "представлено",
         "received",
@@ -1179,8 +1596,68 @@ def _should_stop_author_block(line: str) -> bool:
     return False
 
 
+def _filter_author_phrases(values: list[str], authors: list[str]) -> list[str]:
+    author_tokens = {
+        token
+        for author in authors
+        for token in _phrase_tokens(author)
+        if len(token) >= 4
+    }
+
+    if not author_tokens:
+        return values
+
+    filtered: list[str] = []
+
+    for value in values:
+        phrase_tokens = set(_phrase_tokens(value))
+
+        if phrase_tokens & author_tokens:
+            continue
+
+        filtered.append(value)
+
+    return filtered
+
+
+def _is_untrusted_author_line(line: str) -> bool:
+    cleaned = _clean_author_line(line)
+    low_line = cleaned.lower()
+
+    if not cleaned:
+        return True
+
+    if len(cleaned) > 180:
+        return True
+
+    if AUTHOR_TECHNICAL_RE.search(cleaned):
+        return True
+
+    if REFERENCES_RE.search(cleaned) or CONTENTS_RE.search(cleaned):
+        return True
+
+    if AFFILIATION_RE.search(cleaned) or DOI_RE.search(cleaned):
+        return True
+
+    if re.search(r"\b(?:fig|figure|table|рис\.|табл\.)\b", low_line):
+        return True
+
+    if len(cleaned.split()) > 14 and not _find_author_candidates(cleaned):
+        return True
+
+    return False
+
+
 def _extract_authors_from_lines(lines: list[str]) -> list[str]:
-    cleaned_lines = [_clean_author_line(line) for line in lines]
+    cleaned_lines = [
+        _clean_author_line(line)
+        for line in lines
+        if not _is_untrusted_author_line(line)
+    ]
+
+    if len(cleaned_lines) > 8:
+        cleaned_lines = cleaned_lines[:8]
+
     text = ", ".join(line for line in cleaned_lines if line)
     return _normalize_author_list(_find_author_candidates(text))
 
@@ -1200,7 +1677,10 @@ def _extract_authors_from_copyright_block(pages: list[PageText]) -> list[str]:
 
     for page in pages[:3]:
         for index, line in enumerate(page.lines):
-            if "©" not in line and not re.search(r"\b(19\d{2}|20\d{2})\s*г\.", line):
+            if "©" not in line:
+                continue
+
+            if not re.search(r"\b(19\d{2}|20\d{2})\s*(?:г\.)?", line):
                 continue
 
             block: list[str] = []
@@ -1235,23 +1715,31 @@ def _extract_authors_from_title_zone(
     if title_match.page_index >= len(pages):
         return []
 
+    if title_match.line_index is None:
+        return []
+
     page = pages[title_match.page_index]
-    start = (title_match.line_index or 0) + 1
+    start = title_match.line_index + 1
     section_index = _find_first_section_index(page.lines)
 
     # В старых PDF pypdf часто ставит title/authors после основного текста.
     # Тогда section_index может оказаться меньше start. В таком случае
     # нельзя обрезать блок по section_index.
     if section_index <= start:
-        end = min(len(page.lines), start + 30)
+        end = min(len(page.lines), start + 10)
     else:
-        end = min(section_index, start + 30)
+        end = min(section_index, start + 10)
 
     block: list[str] = []
 
     for line in page.lines[start:end]:
         if _should_stop_author_block(line):
             break
+
+        if _is_untrusted_author_line(line):
+            if block:
+                break
+            continue
 
         if BAD_TITLE_RE.search(line) and "©" not in line:
             continue
@@ -1261,10 +1749,30 @@ def _extract_authors_from_title_zone(
         if cleaned_line:
             block.append(cleaned_line)
 
-    return _extract_authors_from_lines(block)
+    authors = _extract_authors_from_lines(block)
+
+    if len(authors) > 10:
+        return []
+
+    return authors
 
 
-def _extract_authors_from_citation(full_text: str) -> list[str]:
+def _citation_matches_title(citation_text: str, title: str | None) -> bool:
+    if not title:
+        return False
+
+    title_tokens = _title_tokens(title)
+    if len(title_tokens) < 2:
+        return False
+
+    citation_search = _normalize_for_search(citation_text)
+    matches = sum(1 for token in title_tokens[:10] if token in citation_search)
+    required = max(2, min(4, len(title_tokens) // 2))
+
+    return matches >= required
+
+
+def _extract_authors_from_citation(full_text: str, title: str | None) -> list[str]:
     citation_match = re.search(
         r"(?:Citation:|To cite this article:)\s*(.+?)(?:\(\d{4}\)|\.\s+[A-ZА-ЯЁ]|https?://|DOI|$)",
         full_text,
@@ -1274,7 +1782,12 @@ def _extract_authors_from_citation(full_text: str) -> list[str]:
     if citation_match is None:
         return []
 
-    return _normalize_author_list(_find_author_candidates(citation_match.group(1)))
+    citation_text = citation_match.group(1)
+
+    if not _citation_matches_title(citation_text, title):
+        return []
+
+    return _extract_authors_from_lines([citation_text])
 
 
 def _extract_authors_from_first_pages(pages: list[PageText]) -> list[str]:
@@ -1299,50 +1812,29 @@ def _extract_authors(
     if title_match is not None and "флотилия плавучих" in title_match.title.lower():
         return []
 
-    extractors = []
-
     if kind == "patent":
-        extractors.append(lambda: _extract_patent_authors(full_text))
+        return _extract_patent_authors(full_text)[:10]
 
-    # 1. Старые русские журналы: блок после © 2004 г.
-    extractors.append(lambda: _extract_authors_from_copyright_block(pages))
+    title_zone_authors = _extract_authors_from_title_zone(
+        pages,
+        title_match=title_match,
+    )
+    if title_zone_authors:
+        return title_zone_authors[:10]
 
-    # 2. Зона после найденного заголовка.
-    if not (
-        kind == "conference_collection"
-        and (title_match is None or title_match.line_index is None)
-    ):
-        extractors.append(lambda: _extract_authors_from_title_zone(
-            pages,
-            title_match=title_match,
-        ))
+    copyright_authors = _extract_authors_from_copyright_block(pages)
+    if copyright_authors:
+        return copyright_authors[:10]
 
-    # 3. Citation / To cite this article.
-    extractors.append(lambda: _extract_authors_from_citation(full_text))
+    if kind in {"russian_journal", "geodynamics", "mdpi"}:
+        citation_authors = _extract_authors_from_citation(
+            full_text,
+            title_match.title if title_match is not None else None,
+        )
+        if citation_authors:
+            return citation_authors[:10]
 
-    # 4. Fallback по первым страницам.
-    if not (
-        title_match is not None
-        and title_match.line_index is None
-        and re.search(r"[А-Яа-яЁё]", title_match.title)
-        and title_match.score <= 8
-    ):
-        extractors.append(lambda: _extract_authors_from_first_pages(pages))
-
-    best_authors: list[str] = []
-
-    for extractor in extractors:
-        authors = extractor()
-
-        if len(authors) > len(best_authors):
-            best_authors = authors
-
-        # 2+ автора уже достаточно для большинства статей,
-        # но если нашли 5+, почти наверняка это полный блок.
-        if len(best_authors) >= 5:
-            break
-
-    return best_authors[:15]
+    return []
 
 
 def _extract_text_before_references(text: str) -> str:
@@ -1358,9 +1850,169 @@ def _extract_text_before_references(text: str) -> str:
     return text[:match.start()]
 
 
+def _extract_meaningful_metadata_text(text: str, *, limit: int = 30000) -> str:
+    meaningful = _extract_text_before_references(text)
+    kept_lines: list[str] = []
+
+    for line in _extract_metadata_lines(meaningful):
+        low = line.lower().replace("ё", "е")
+
+        if CONTENTS_RE.search(line):
+            continue
+
+        if SERVICE_LINE_RE.search(line):
+            continue
+
+        if CAPTION_OR_TABLE_RE.search(line):
+            continue
+
+        if AUTHOR_TECHNICAL_RE.search(line):
+            continue
+
+        if ORG_OR_JOURNAL_RE.search(line):
+            continue
+
+        if low.startswith(("ключевые слова", "keywords", "key words")):
+            continue
+
+        kept_lines.append(line)
+
+    return "\n".join(kept_lines)[:limit]
+
+
+def _extract_abstract_and_first_paragraphs(text: str, *, limit: int = 8000) -> str:
+    meaningful = _extract_text_before_references(text)
+    lines = _extract_metadata_lines(meaningful)
+    selected: list[str] = []
+    collecting_abstract = False
+
+    for line in lines:
+        low = line.lower()
+
+        if re.match(r"^(abstract|аннотация)\b", low):
+            collecting_abstract = True
+            line = re.sub(r"^(abstract|аннотация)\s*[:.—-]?\s*", "", line, flags=re.IGNORECASE)
+
+        if collecting_abstract:
+            if re.match(r"^(keywords|key\s*words|ключевые\s+слова|introduction|введение|1\.)\b", low):
+                break
+
+            if line and not _is_bad_formatted_phrase(line):
+                selected.append(line)
+
+    if selected:
+        return "\n".join(selected)[:limit]
+
+    return _extract_meaningful_metadata_text(text, limit=limit)
+
+
 def _phrase_tokens(text: str) -> list[str]:
     normalized = text.lower().replace("ё", "е")
     return re.findall(r"[a-zа-я][a-zа-я\-]{2,}", normalized)
+
+
+def _best_morph_parse(word: str):
+    if MORPH is None:
+        return None
+
+    parses = MORPH.parse(word)
+
+    if not parses:
+        return None
+
+    has_cyrillic = bool(re.search(r"[А-Яа-яЁё]", word))
+    if not has_cyrillic:
+        return parses[0]
+
+    # pypdf and keyword n-grams often give plural nouns in nominative form, but
+    # pymorphy may prefer a genitive singular parse for rare scientific words
+    # like "плюмы". Prefer visible plural nominative when it exists.
+    if re.search(r"[ыи]$", word.lower()):
+        for parsed in parses:
+            if parsed.tag.POS == "NOUN" and "plur" in parsed.tag and "nomn" in parsed.tag:
+                return parsed
+
+    return parses[0]
+
+
+def _has_ru_noun(tokens: tuple[str, ...]) -> bool:
+    if MORPH is None:
+        return True
+
+    if not any(re.search(r"[а-яё]", token) for token in tokens):
+        return True
+
+    for token in tokens:
+        parsed = _best_morph_parse(token)
+        if parsed is not None and parsed.tag.POS == "NOUN":
+            return True
+
+    return False
+
+
+def _ends_with_ru_modifier(tokens: tuple[str, ...]) -> bool:
+    if MORPH is None or not tokens:
+        return False
+
+    last = tokens[-1]
+    if not re.search(r"[а-яё]", last):
+        return False
+
+    parsed = _best_morph_parse(last)
+    return parsed is not None and parsed.tag.POS in {"ADJF", "PRTF"}
+
+
+def _has_bad_ru_noun_sequence(tokens: tuple[str, ...]) -> bool:
+    if MORPH is None or len(tokens) < 2:
+        return False
+
+    parsed_tokens = [
+        _best_morph_parse(token) if re.search(r"[а-яё]", token) else None
+        for token in tokens
+    ]
+
+    for index in range(len(parsed_tokens) - 1):
+        current = parsed_tokens[index]
+        next_parsed = parsed_tokens[index + 1]
+
+        if current is None or next_parsed is None:
+            continue
+
+        if current.tag.POS != "NOUN" or next_parsed.tag.POS != "NOUN":
+            continue
+
+        if "nomn" not in current.tag and "nomn" in next_parsed.tag:
+            return True
+
+    return False
+
+
+def _phrase_token_segments(text: str) -> list[list[str]]:
+    """
+    Разбивает текст на короткие смысловые сегменты.
+
+    Важно: частотные фразы нельзя строить по всему тексту подряд,
+    иначе появляются мусорные склейки через границы строк и союзов:
+    "природные явления вещество", "язев кузьмин" и т.п.
+    """
+
+    normalized = text.lower().replace("ё", "е")
+
+    raw_segments = re.split(
+        r"[\n\r.;:!?]|\s+[и]\s+|\s+and\s+|\s+[—–]\s+",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+
+    segments: list[list[str]] = []
+
+    for segment in raw_segments:
+        tokens = _phrase_tokens(segment)
+
+        if tokens:
+            segments.append(tokens)
+
+    return segments
 
 
 def _is_good_phrase_tokens(tokens: tuple[str, ...]) -> bool:
@@ -1381,10 +2033,140 @@ def _is_good_phrase_tokens(tokens: tuple[str, ...]) -> bool:
     if len(phrase) < 6 or len(phrase) > 80:
         return False
 
+    if not _has_ru_noun(tokens):
+        return False
+
+    if _ends_with_ru_modifier(tokens):
+        return False
+
+    if _has_bad_ru_noun_sequence(tokens):
+        return False
+
     if PHRASE_BAD_WORDS_RE.search(phrase):
         return False
 
+    if "coef cients" in phrase or any(token.startswith("coef") for token in tokens):
+        return False
+
+    if GENERIC_METADATA_PHRASES_RE.search(phrase):
+        return False
+
+    if ORG_OR_JOURNAL_RE.search(phrase):
+        return False
+
+    # Не даём авторам попадать в темы/ключевые слова.
+    if _line_looks_like_author_list(phrase):
+        return False
+
     return True
+
+
+def _is_bad_formatted_phrase(value: str) -> bool:
+    value = _clean_metadata_line(value)
+    low = value.lower().replace("ё", "е")
+
+    if not low:
+        return True
+
+    if PHRASE_BAD_WORDS_RE.search(low):
+        return True
+
+    if SERVICE_LINE_RE.search(low):
+        return True
+
+    if CAPTION_OR_TABLE_RE.search(low):
+        return True
+
+    if ORG_OR_JOURNAL_RE.search(low):
+        return True
+
+    if GENERIC_METADATA_PHRASES_RE.search(low):
+        return True
+
+    if AUTHOR_TECHNICAL_RE.search(low):
+        return True
+
+    if _line_looks_like_author_list(value):
+        return True
+
+    tokens = tuple(_phrase_tokens(value))
+
+    if tokens and not _has_ru_noun(tokens):
+        return True
+
+    if tokens and _ends_with_ru_modifier(tokens):
+        return True
+
+    if tokens and _has_bad_ru_noun_sequence(tokens):
+        return True
+
+    stop_words = RU_STOP_WORDS | EN_STOP_WORDS
+    if tokens and (tokens[0] in stop_words or tokens[-1] in stop_words):
+        return True
+
+    # Слишком общие/служебные фразы для тем и ключевых слов.
+    if low in {
+        "данные",
+        "результаты",
+        "исследование",
+        "статья",
+        "работа",
+        "академия наук",
+        "академии наук",
+        "институт земной коры",
+        "геодинамическая эволюция литосферы",
+    }:
+        return True
+
+    # Фразы, которые выглядят как часть служебной библиографии.
+    if re.search(r"\b(19\d{2}|20\d{2})\b", low):
+        return True
+
+    if re.search(r"[a-zа-я]{2,}-\s+[a-zа-я]{2,}", low):
+        return True
+
+    return False
+
+
+def _extract_title_phrase_seeds(
+    title: str | None,
+    *,
+    language: str | None,
+    limit: int = 6,
+) -> list[str]:
+    """
+    Достаёт аккуратные темы из заголовка, не склеивая части через союз "и".
+
+    Например:
+    "ПРИРОДНЫЕ ЯВЛЕНИЯ И ВЕЩЕСТВО АБЛЯЦИОННОГО СЛЕДА..."
+    не должно давать "природные явления вещество".
+    """
+
+    if not title:
+        return []
+
+    seeds: list[str] = []
+
+    for tokens in _phrase_token_segments(title):
+        if len(tokens) < 2:
+            continue
+
+        # Короткий сегмент можно взять целиком.
+        if 2 <= len(tokens) <= 4 and _is_good_phrase_tokens(tuple(tokens)):
+            seeds.append(_format_phrase(" ".join(tokens), language=language))
+            continue
+
+        # Для длинных сегментов берём только хорошие 2-3-граммы.
+        for ngram_size in (2, 3):
+            for index in range(0, len(tokens) - ngram_size + 1):
+                ngram = tuple(tokens[index:index + ngram_size])
+
+                if _is_good_phrase_tokens(ngram):
+                    seeds.append(_format_phrase(" ".join(ngram), language=language))
+
+    return _dedupe_phrases(seeds)[:limit]
+
+
 def _to_nominative_ru_phrase(value: str) -> str:
     if MORPH is None:
         return value
@@ -1410,22 +2192,32 @@ def _to_nominative_ru_phrase(value: str) -> str:
             parsed_words.append((cleaned_word, None))
             continue
 
-        parsed = MORPH.parse(cleaned_word)[0]
+        parsed = _best_morph_parse(cleaned_word)
         parsed_words.append((cleaned_word, parsed))
 
     # Ищем главное существительное.
-    # Обычно оно последнее:
-    # абляционного следа -> следа
-    # витимского метеороида -> метеороида
-    # снегового покрова -> покрова
+    #
+    # Для коротких фраз типа:
+    # абляционного следа -> главное слово последнее: следа
+    #
+    # Но для фраз типа:
+    # вещество абляционного следа
+    # первое слово уже может быть главным существительным в именительном падеже.
+    # Тогда не надо превращать фразу в "вещество абляционный след".
     head_index: int | None = None
 
-    for index in range(len(parsed_words) - 1, -1, -1):
-        _word, parsed = parsed_words[index]
-
-        if parsed is not None and parsed.tag.POS == "NOUN":
+    for index, (_word, parsed) in enumerate(parsed_words):
+        if parsed is not None and parsed.tag.POS == "NOUN" and "nomn" in parsed.tag:
             head_index = index
             break
+
+    if head_index is None:
+        for index in range(len(parsed_words) - 1, -1, -1):
+            _word, parsed = parsed_words[index]
+
+            if parsed is not None and parsed.tag.POS == "NOUN":
+                head_index = index
+                break
 
     if head_index is None:
         return value
@@ -1435,7 +2227,7 @@ def _to_nominative_ru_phrase(value: str) -> str:
     if head_parsed is None:
         return value
 
-    head_nominative = head_parsed.inflect({"nomn"})
+    head_nominative = head_parsed if "nomn" in head_parsed.tag else head_parsed.inflect({"nomn"})
 
     if head_nominative is None:
         return value
@@ -1485,7 +2277,26 @@ def _to_nominative_ru_phrase(value: str) -> str:
         result.append(word)
 
     phrase = " ".join(result)
-    return phrase[:1].upper() + phrase[1:] if phrase else phrase
+    return _format_ru_phrase_case(phrase)
+
+
+def _format_ru_phrase_case(value: str) -> str:
+    words = value.split()
+
+    if not words:
+        return value
+
+    formatted: list[str] = []
+
+    for index, word in enumerate(words):
+        parsed = _best_morph_parse(word) if re.search(r"[А-Яа-яЁё]", word) else None
+
+        if index == 0 or (parsed is not None and "Geox" in parsed.tag):
+            formatted.append(word[:1].upper() + word[1:])
+        else:
+            formatted.append(word)
+
+    return " ".join(formatted)
 
 def _format_phrase(value: str, *, language: str | None) -> str:
     value = re.sub(r"\s+", " ", value).strip(" .;,:")
@@ -1503,7 +2314,12 @@ def _dedupe_phrases(values: list[str]) -> list[str]:
     seen: set[str] = set()
 
     for value in values:
-        cleaned = _clean_metadata_line(value).lower().replace("ё", "е")
+        value = _clean_metadata_line(value)
+
+        if _is_bad_formatted_phrase(value):
+            continue
+
+        cleaned = value.lower().replace("ё", "е")
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
 
         if not cleaned:
@@ -1526,25 +2342,31 @@ def _extract_frequent_phrases(
     limit: int,
     min_frequency: int = 2,
 ) -> list[str]:
-    meaningful_text = _extract_text_before_references(text)
-    meaningful_text = meaningful_text[:30000]
+    meaningful_text = _extract_meaningful_metadata_text(text, limit=30000)
 
-    tokens = _phrase_tokens(meaningful_text)
+    segments = _phrase_token_segments(meaningful_text)
 
-    if len(tokens) < 20:
+    if not segments:
         return []
 
     title_token_set = set(_phrase_tokens(title or ""))
     counts: Counter[str] = Counter()
 
-    for ngram_size in (2, 3):
-        for index in range(0, len(tokens) - ngram_size + 1):
-            ngram = tuple(tokens[index:index + ngram_size])
+    for tokens in segments:
+        if len(tokens) < 2:
+            continue
 
-            if not _is_good_phrase_tokens(ngram):
+        for ngram_size in (2, 3):
+            if len(tokens) < ngram_size:
                 continue
 
-            counts[" ".join(ngram)] += 1
+            for index in range(0, len(tokens) - ngram_size + 1):
+                ngram = tuple(tokens[index:index + ngram_size])
+
+                if not _is_good_phrase_tokens(ngram):
+                    continue
+
+                counts[" ".join(ngram)] += 1
 
     scored: list[tuple[float, str]] = []
 
@@ -1562,7 +2384,7 @@ def _extract_frequent_phrases(
 
     phrases = [
         _format_phrase(phrase, language=language)
-        for _score, phrase in scored[: limit * 3]
+        for _score, phrase in scored[: limit * 4]
     ]
 
     return _dedupe_phrases(phrases)[:limit]
@@ -1583,30 +2405,58 @@ def _extract_keywords_from_frequency(
     )
 
 
-def _extract_topics_from_frequency(
+def _extract_keywords_from_focused_text(
     text: str,
     *,
     title: str | None,
     language: str | None,
-    keywords: list[str],
 ) -> list[str]:
-    # Для тем важнее не весь текст, а title + keywords + верхняя часть статьи.
-    # Так меньше шансов получить случайные технические пары из таблиц и списка литературы.
     focused_text = "\n".join(
         [
             title or "",
-            " ".join(keywords),
-            _extract_text_before_references(text)[:12000],
+            _extract_abstract_and_first_paragraphs(text),
         ]
     )
 
-    return _extract_frequent_phrases(
+    title_keywords = _extract_title_phrase_seeds(
+        title,
+        language=language,
+        limit=8,
+    )
+
+    focused_keywords = _extract_frequent_phrases(
         focused_text,
         title=title,
         language=language,
-        limit=7,
-        min_frequency=2,
+        limit=10,
+        min_frequency=1,
     )
+
+    return _dedupe_phrases([*title_keywords, *focused_keywords])[:10]
+
+
+def _extract_topics_from_keywords(
+    *,
+    title: str | None,
+    keywords: list[str],
+) -> list[str]:
+    haystack = " ".join([title or "", *keywords]).lower().replace("ё", "е")
+
+    if not haystack:
+        return []
+
+    scored: list[tuple[int, int, str]] = []
+
+    for order, (topic, markers) in enumerate(TOPIC_RULES):
+        score = sum(1 for marker in markers if marker in haystack)
+
+        if score:
+            scored.append((score, -order, topic))
+
+    scored.sort(key=lambda item: (-item[0], -item[1], item[2]))
+
+    topics = [topic for _score, _order, topic in scored]
+    return _dedupe_phrases(topics)[:5]
 
 
 def _extract_keywords(text: str) -> list[str]:
@@ -1669,6 +2519,9 @@ def _extract_keywords(text: str) -> list[str]:
         if len(keyword) < 2:
             continue
 
+        if _is_bad_formatted_phrase(keyword):
+            continue
+
         if SECTION_START_RE.search(keyword) or BAD_TITLE_RE.search(keyword):
             continue
 
@@ -1727,14 +2580,24 @@ def extract_publication_metadata_from_pdf(
     file_path: Path,
     original_name: str | None = None,
 ) -> ExtractedPublicationMetadata:
-    filename_title = _filename_title(original_name or file_path.name)
+    original_filename = original_name or file_path.name
+    filename_title = _filename_title_candidate(original_filename)
+    filename_title_quality = _filename_title_quality(
+        filename_title,
+        raw_title=Path(original_filename).stem,
+    )
     pages = _extract_pages(file_path)
 
     full_text = "\n".join(page.text for page in pages)
 
     if not full_text.strip():
+        title, title_source, title_confidence, title_warning = _select_title(
+            None,
+            filename_title=filename_title,
+            filename_quality=filename_title_quality,
+        )
         return ExtractedPublicationMetadata(
-            title=filename_title,
+            title=title,
             year=None,
             language=None,
             publication_type="article",
@@ -1742,6 +2605,9 @@ def extract_publication_metadata_from_pdf(
             authors=[],
             keywords=[],
             topics=[],
+            title_source=title_source,
+            title_confidence=title_confidence,
+            title_warning=title_warning,
         )
 
     kind = _detect_document_kind(full_text)
@@ -1749,10 +2615,15 @@ def extract_publication_metadata_from_pdf(
     title_match = _extract_title(
         pages,
         kind=kind,
-        filename_title=filename_title,
+        filename_title=filename_title if filename_title_quality >= 3 else None,
+        allow_filename_fallback=False,
     )
 
-    title = title_match.title if title_match is not None else filename_title
+    title, title_source, title_confidence, title_warning = _select_title(
+        title_match,
+        filename_title=filename_title,
+        filename_quality=filename_title_quality,
+    )
     language = _detect_language(full_text, filename_title)
 
     authors = _extract_authors(
@@ -1763,20 +2634,25 @@ def extract_publication_metadata_from_pdf(
 
     explicit_keywords = _extract_keywords(full_text)
 
-    generated_keywords = _extract_keywords_from_frequency(
-        full_text,
-        title=title,
-        language=language,
-    )
+    if explicit_keywords:
+        keywords = _dedupe_phrases(explicit_keywords)[:12]
+    else:
+        focused_keywords = _extract_keywords_from_focused_text(
+            full_text,
+            title=title,
+            language=language,
+        )
+        frequent_keywords = _extract_keywords_from_frequency(
+            full_text,
+            title=title,
+            language=language,
+        )
+        keywords = _dedupe_phrases([*focused_keywords, *frequent_keywords])[:12]
 
-    keywords = _dedupe_phrases(
-        [*explicit_keywords, *generated_keywords]
-    )[:12]
+    keywords = _filter_author_phrases(keywords, authors)
 
-    topics = _extract_topics_from_frequency(
-        full_text,
+    topics = _extract_topics_from_keywords(
         title=title,
-        language=language,
         keywords=keywords,
     )
 
@@ -1789,6 +2665,9 @@ def extract_publication_metadata_from_pdf(
         authors=authors,
         keywords=keywords,
         topics=topics,
+        title_source=title_source,
+        title_confidence=title_confidence,
+        title_warning=title_warning,
     )
 
 

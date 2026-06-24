@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+﻿import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import { authorsApi } from "../api/authorsApi";
 import { keywordsApi } from "../api/keywordsApi";
@@ -31,21 +31,21 @@ const initialForm: DictionaryFormState = {
 };
 
 function getDictionaryTitle(type: DictionaryType) {
-  if (type === "authors") return "Авторы";
-  if (type === "topics") return "Темы";
-  return "Ключевые слова";
+  if (type === "authors") return "РђРІС‚РѕСЂС‹";
+  if (type === "topics") return "РўРµРјС‹";
+  return "РљР»СЋС‡РµРІС‹Рµ СЃР»РѕРІР°";
 }
 
 function getDictionaryDescription(type: DictionaryType) {
-  if (type === "authors") return "Добавляйте авторов, чтобы потом выбирать их в карточке публикации.";
-  if (type === "topics") return "Добавляйте темы для группировки и фильтрации публикаций.";
-  return "Добавляйте ключевые слова для поиска и описания публикаций.";
+  if (type === "authors") return "Р”РѕР±Р°РІР»СЏР№С‚Рµ Р°РІС‚РѕСЂРѕРІ, С‡С‚РѕР±С‹ РїРѕС‚РѕРј РІС‹Р±РёСЂР°С‚СЊ РёС… РІ РєР°СЂС‚РѕС‡РєРµ РїСѓР±Р»РёРєР°С†РёРё.";
+  if (type === "topics") return "Р”РѕР±Р°РІР»СЏР№С‚Рµ С‚РµРјС‹ РґР»СЏ РіСЂСѓРїРїРёСЂРѕРІРєРё Рё С„РёР»СЊС‚СЂР°С†РёРё РїСѓР±Р»РёРєР°С†РёР№.";
+  return "Р”РѕР±Р°РІР»СЏР№С‚Рµ РєР»СЋС‡РµРІС‹Рµ СЃР»РѕРІР° РґР»СЏ РїРѕРёСЃРєР° Рё РѕРїРёСЃР°РЅРёСЏ РїСѓР±Р»РёРєР°С†РёР№.";
 }
 
 function getCreateButtonText(type: DictionaryType) {
-  if (type === "authors") return "Добавить автора";
-  if (type === "topics") return "Добавить тему";
-  return "Добавить ключевое слово";
+  if (type === "authors") return "Р”РѕР±Р°РІРёС‚СЊ Р°РІС‚РѕСЂР°";
+  if (type === "topics") return "Р”РѕР±Р°РІРёС‚СЊ С‚РµРјСѓ";
+  return "Р”РѕР±Р°РІРёС‚СЊ РєР»СЋС‡РµРІРѕРµ СЃР»РѕРІРѕ";
 }
 
 export function DictionariesPage({ type }: Props) {
@@ -102,7 +102,7 @@ export function DictionariesPage({ type }: Props) {
 
       setItems(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось загрузить справочник.");
+      setError(e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ СЃРїСЂР°РІРѕС‡РЅРёРє.");
     } finally {
       setIsLoading(false);
     }
@@ -126,46 +126,46 @@ export function DictionariesPage({ type }: Props) {
       if (type === "authors") {
         const fullName = form.full_name.trim();
         if (!fullName) {
-          setError("Укажите ФИО автора.");
+          setError("РЈРєР°Р¶РёС‚Рµ Р¤РРћ Р°РІС‚РѕСЂР°.");
           return;
         }
 
         await authorsApi.create({
           full_name: fullName,
-          organization: form.organization.trim() || null,
+          organization: form.organization.trim(),
         });
-        setSuccess("Автор добавлен.");
+        setSuccess("РђРІС‚РѕСЂ РґРѕР±Р°РІР»РµРЅ.");
       }
 
       if (type === "topics") {
         const name = form.name.trim();
         if (!name) {
-          setError("Укажите название темы.");
+          setError("РЈРєР°Р¶РёС‚Рµ РЅР°Р·РІР°РЅРёРµ С‚РµРјС‹.");
           return;
         }
 
         await topicsApi.create({
           name,
-          description: form.description.trim() || null,
+          description: form.description.trim(),
         });
-        setSuccess("Тема добавлена.");
+        setSuccess("РўРµРјР° РґРѕР±Р°РІР»РµРЅР°.");
       }
 
       if (type === "keywords") {
         const name = form.name.trim();
         if (!name) {
-          setError("Укажите ключевое слово.");
+          setError("РЈРєР°Р¶РёС‚Рµ РєР»СЋС‡РµРІРѕРµ СЃР»РѕРІРѕ.");
           return;
         }
 
         await keywordsApi.create({ name });
-        setSuccess("Ключевое слово добавлено.");
+        setSuccess("РљР»СЋС‡РµРІРѕРµ СЃР»РѕРІРѕ РґРѕР±Р°РІР»РµРЅРѕ.");
       }
 
       setForm(initialForm);
       await loadItems();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Не удалось сохранить запись.");
+      setError(e instanceof Error ? e.message : "РќРµ СѓРґР°Р»РѕСЃСЊ СЃРѕС…СЂР°РЅРёС‚СЊ Р·Р°РїРёСЃСЊ.");
     } finally {
       setIsSaving(false);
     }
@@ -182,26 +182,26 @@ export function DictionariesPage({ type }: Props) {
 
       <div className="dictionary-page__content">
         <form className="dictionary-form card" onSubmit={handleSubmit}>
-          <h2 className="dictionary-form__title">Новая запись</h2>
+          <h2 className="dictionary-form__title">РќРѕРІР°СЏ Р·Р°РїРёСЃСЊ</h2>
 
           {type === "authors" && (
             <>
               <label className="dictionary-form__field">
-                <span className="dictionary-form__label">ФИО автора *</span>
+                <span className="dictionary-form__label">Р¤РРћ Р°РІС‚РѕСЂР° *</span>
                 <input
                   className="dictionary-form__control"
                   value={form.full_name}
-                  placeholder="Иванов И. И."
+                  placeholder="РРІР°РЅРѕРІ Р. Р."
                   onChange={(event) => updateForm("full_name", event.target.value)}
                 />
               </label>
 
               <label className="dictionary-form__field">
-                <span className="dictionary-form__label">Организация</span>
+                <span className="dictionary-form__label">РћСЂРіР°РЅРёР·Р°С†РёСЏ</span>
                 <input
                   className="dictionary-form__control"
                   value={form.organization}
-                  placeholder="Институт земной коры СО РАН"
+                  placeholder="РРЅСЃС‚РёС‚СѓС‚ Р·РµРјРЅРѕР№ РєРѕСЂС‹ РЎРћ Р РђРќ"
                   onChange={(event) => updateForm("organization", event.target.value)}
                 />
               </label>
@@ -211,21 +211,21 @@ export function DictionariesPage({ type }: Props) {
           {type === "topics" && (
             <>
               <label className="dictionary-form__field">
-                <span className="dictionary-form__label">Название темы *</span>
+                <span className="dictionary-form__label">РќР°Р·РІР°РЅРёРµ С‚РµРјС‹ *</span>
                 <input
                   className="dictionary-form__control"
                   value={form.name}
-                  placeholder="Байкал"
+                  placeholder="Р‘Р°Р№РєР°Р»"
                   onChange={(event) => updateForm("name", event.target.value)}
                 />
               </label>
 
               <label className="dictionary-form__field">
-                <span className="dictionary-form__label">Описание</span>
+                <span className="dictionary-form__label">РћРїРёСЃР°РЅРёРµ</span>
                 <textarea
                   className="dictionary-form__control dictionary-form__control_textarea"
                   value={form.description}
-                  placeholder="Публикации, связанные с Байкальским регионом"
+                  placeholder="РџСѓР±Р»РёРєР°С†РёРё, СЃРІСЏР·Р°РЅРЅС‹Рµ СЃ Р‘Р°Р№РєР°Р»СЊСЃРєРёРј СЂРµРіРёРѕРЅРѕРј"
                   onChange={(event) => updateForm("description", event.target.value)}
                 />
               </label>
@@ -234,11 +234,11 @@ export function DictionariesPage({ type }: Props) {
 
           {type === "keywords" && (
             <label className="dictionary-form__field">
-              <span className="dictionary-form__label">Ключевое слово *</span>
+              <span className="dictionary-form__label">РљР»СЋС‡РµРІРѕРµ СЃР»РѕРІРѕ *</span>
               <input
                 className="dictionary-form__control"
                 value={form.name}
-                placeholder="геология"
+                placeholder="РіРµРѕР»РѕРіРёСЏ"
                 onChange={(event) => updateForm("name", event.target.value)}
               />
             </label>
@@ -248,20 +248,20 @@ export function DictionariesPage({ type }: Props) {
           {success && <p className="dictionary-form__message success">{success}</p>}
 
           <button className="dictionary-form__button button" type="submit" disabled={isSaving}>
-            {isSaving ? "Сохраняем..." : getCreateButtonText(type)}
+            {isSaving ? "РЎРѕС…СЂР°РЅСЏРµРј..." : getCreateButtonText(type)}
           </button>
         </form>
 
         <div className="dictionary-list">
           <div className="dictionary-list__header">
-            <h2 className="dictionary-list__title">Список</h2>
+            <h2 className="dictionary-list__title">РЎРїРёСЃРѕРє</h2>
             <span className="dictionary-list__count">{items.length}</span>
           </div>
 
-          {isLoading && <p className="dictionary-list__empty muted">Загрузка...</p>}
+          {isLoading && <p className="dictionary-list__empty muted">Р—Р°РіСЂСѓР·РєР°...</p>}
 
           {!isLoading && items.length === 0 && (
-            <p className="dictionary-list__empty muted">Записей пока нет. Добавьте первую запись через форму.</p>
+            <p className="dictionary-list__empty muted">Р—Р°РїРёСЃРµР№ РїРѕРєР° РЅРµС‚. Р”РѕР±Р°РІСЊС‚Рµ РїРµСЂРІСѓСЋ Р·Р°РїРёСЃСЊ С‡РµСЂРµР· С„РѕСЂРјСѓ.</p>
           )}
 
           {!isLoading && items.length > 0 && (
@@ -279,3 +279,4 @@ export function DictionariesPage({ type }: Props) {
     </section>
   );
 }
+

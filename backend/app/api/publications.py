@@ -9,6 +9,7 @@ from app.db.database import get_db
 from app.models.author import Author
 from app.models.keyword import Keyword
 from app.models.publication import Publication
+from app.models.publication_import import ImportBatch, ImportItem
 from app.models.source_file import SourceFile
 from app.models.topic import Topic
 from app.schemas.publication import PublicationCreate, PublicationRead, PublicationUpdate
@@ -282,12 +283,80 @@ async def save_uploaded_pdf(file: UploadFile, db: AsyncSession) -> SourceFile:
     return source_file
 
 
+def recalculate_import_batch(batch: ImportBatch) -> None:
+    items = list(batch.items)
+    batch.total_files = len(items)
+    batch.processed_count = len(
+        [item for item in items if item.status != "processing"]
+    )
+    batch.needs_review_count = len(
+        [item for item in items if item.status == "needs_review"]
+    )
+    batch.saved_count = len([item for item in items if item.status == "saved"])
+    batch.duplicate_count = len(
+        [item for item in items if item.status == "duplicate"]
+    )
+    batch.error_count = len([item for item in items if item.status == "error"])
+
+    if batch.error_count and not batch.needs_review_count:
+        batch.status = "completed_with_errors"
+    elif batch.needs_review_count:
+        batch.status = "needs_review"
+    else:
+        batch.status = "completed"
+
+
+async def mark_import_item_saved(
+    db: AsyncSession,
+    *,
+    import_item_id: int | None,
+    publication: Publication,
+) -> None:
+    if import_item_id is None:
+        return
+
+    result = await db.execute(
+        select(ImportItem)
+        .where(ImportItem.id == import_item_id)
+        .options(selectinload(ImportItem.batch).selectinload(ImportBatch.items))
+    )
+    item = result.scalar_one_or_none()
+
+    if item is None:
+        raise HTTPException(status_code=404, detail="Import item not found")
+
+    if item.status != "needs_review":
+        raise HTTPException(
+            status_code=400,
+            detail="Import item is not ready for review",
+        )
+
+    if item.source_file_id and publication.source_file_id != item.source_file_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Publication source file does not match import item",
+        )
+
+    item.publication_id = publication.id
+    item.status = "saved"
+    item.error_message = None
+    recalculate_import_batch(item.batch)
+
+
 @router.post("", response_model=PublicationRead, status_code=status.HTTP_201_CREATED)
 async def create_publication(
     data: PublicationCreate,
     db: AsyncSession = Depends(get_db),
 ):
-    await check_source_file_exists(db, data.source_file_id)
+    source_file_id = data.source_file_id
+
+    if data.import_item_id is not None and source_file_id is None:
+        import_item = await db.get(ImportItem, data.import_item_id)
+        if import_item is None:
+            raise HTTPException(status_code=404, detail="Import item not found")
+        source_file_id = import_item.source_file_id
+
+    await check_source_file_exists(db, source_file_id)
 
     authors = await resolve_authors(
         db,
@@ -312,7 +381,7 @@ async def create_publication(
         publication_type=data.publication_type,
         doi=data.doi,
         status=data.status,
-        source_file_id=data.source_file_id,
+        source_file_id=source_file_id,
     )
 
     publication.authors = authors
@@ -320,6 +389,14 @@ async def create_publication(
     publication.keywords = keywords
 
     db.add(publication)
+    await db.flush()
+
+    await mark_import_item_saved(
+        db,
+        import_item_id=data.import_item_id,
+        publication=publication,
+    )
+
     await db.commit()
 
     return await get_publication_or_404(publication.id, db)

@@ -43,6 +43,9 @@ class CatalogMatchRead(BaseModel):
 
 class ExtractedPublicationMetadataRead(BaseModel):
     title: str | None = None
+    title_source: str = "unknown"
+    title_confidence: str = "low"
+    title_warning: str | None = None
     year: int | None = None
     language: str | None = None
     publication_type: str | None = "article"
@@ -71,6 +74,7 @@ class ExtractedPublicationMetadataRead(BaseModel):
 class SourceFileMetadataPreview(BaseModel):
     status: str
     file_hash: str
+    review_status: str = "manual_entry"
     duplicate_source_file_id: int | None = None
     message: str | None = None
     extracted: ExtractedPublicationMetadataRead | None = None

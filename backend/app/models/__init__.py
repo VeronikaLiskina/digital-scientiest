@@ -8,6 +8,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.keyword import Keyword
 from app.models.processing_log import ProcessingLog
 from app.models.publication import Publication
+from app.models.publication_import import ImportBatch, ImportItem
 from app.models.source_file import SourceFile
 from app.models.topic import Topic
 
@@ -20,6 +21,8 @@ __all__ = [
     "Keyword",
     "ProcessingLog",
     "Publication",
+    "ImportBatch",
+    "ImportItem",
     "SourceFile",
     "Topic",
 ]

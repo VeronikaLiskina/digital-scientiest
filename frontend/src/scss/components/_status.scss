@@ -1,4 +1,4 @@
-@use "../abstracts/variables" as *;
+﻿@use "../abstracts/variables" as *;
 
 .status {
   display: inline-flex;
@@ -12,13 +12,17 @@
 
   &_new,
   &_draft,
-  &_pending {
+  &_pending,
+  &_skipped,
+  &_duplicate {
     background: #eef3fb;
     color: #4f607d;
   }
 
   &_processed,
-  &_success {
+  &_success,
+  &_saved,
+  &_completed {
     background: #e9f8ef;
     color: $success;
   }
@@ -33,8 +37,12 @@
     color: $error;
   }
 
-  &_review {
+  &_review,
+  &_needs_review,
+  &_completed_with_errors {
     background: #fff7e6;
     color: $warning;
   }
 }
+
+

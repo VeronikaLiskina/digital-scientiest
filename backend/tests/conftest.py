@@ -14,6 +14,7 @@ from app.models.publication import Publication  # noqa: F401
 from app.models.source_file import SourceFile  # noqa: F401
 from app.models.document_chunk import DocumentChunk  # noqa: F401
 from app.models.processing_log import ProcessingLog  # noqa: F401
+from app.models.publication_import import ImportBatch, ImportItem  # noqa: F401
 
 
 TEST_DATABASE_URL = (

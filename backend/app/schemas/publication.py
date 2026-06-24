@@ -16,6 +16,8 @@ class PublicationBase(BaseModel):
 
 
 class PublicationCreate(PublicationBase):
+    import_item_id: int | None = None
+
     author_ids: list[int] = []
     topic_ids: list[int] = []
     keyword_ids: list[int] = []

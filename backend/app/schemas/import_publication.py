@@ -5,6 +5,9 @@ from app.schemas.publication import PublicationRead
 
 class ExtractedPublicationData(BaseModel):
     title: str | None = None
+    title_source: str = "unknown"
+    title_confidence: str = "low"
+    title_warning: str | None = None
     year: int | None = None
     language: str | None = None
     publication_type: str | None = "article"

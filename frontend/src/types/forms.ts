@@ -1,4 +1,4 @@
-export interface AuthorFormData {
+﻿export interface AuthorFormData {
   full_name: string;
   organization: string;
 }
@@ -20,15 +20,12 @@ export interface PublicationFormData {
   doi: string;
   status: string;
   source_file_id: string;
+  import_item_id?: string;
   author_ids: number[];
   topic_ids: number[];
   keyword_ids: number[];
-
-  /**
-   * Значения, автоматически подставленные из PDF и отредактированные пользователем.
-   * Они не создаются в справочниках при выборе файла — только при сохранении публикации.
-   */
   author_names: string;
   topic_names: string;
   keyword_names: string;
 }
+

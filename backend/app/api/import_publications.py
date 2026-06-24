@@ -160,6 +160,9 @@ async def import_pdf_batch(
                     source_file_id=source_file.id,
                     extracted=ExtractedPublicationData(
                         title=extracted.title,
+                        title_source=extracted.title_source,
+                        title_confidence=extracted.title_confidence,
+                        title_warning=extracted.title_warning,
                         year=extracted.year,
                         language=extracted.language,
                         publication_type=extracted.publication_type,

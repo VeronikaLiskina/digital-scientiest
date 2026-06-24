@@ -1,4 +1,4 @@
-import { apiClient } from "./client";
+﻿import { apiClient } from "./client";
 import type { Publication } from "../types/entities";
 import type { PublicationFormData } from "../types/forms";
 
@@ -39,6 +39,7 @@ function normalizePublicationForm(data: PublicationFormData) {
     doi: data.doi || null,
     status: data.status || "draft",
     source_file_id: data.source_file_id ? Number(data.source_file_id) : null,
+    import_item_id: data.import_item_id ? Number(data.import_item_id) : null,
     author_ids: data.author_ids,
     topic_ids: data.topic_ids,
     keyword_ids: data.keyword_ids,
@@ -61,6 +62,10 @@ function buildPublicationFormData(data: PublicationFormData, file: File) {
   formData.append("publication_type", data.publication_type || "");
   formData.append("doi", data.doi || "");
   formData.append("status", data.status || "draft");
+
+  if (data.import_item_id) {
+    formData.append("import_item_id", data.import_item_id);
+  }
 
   formData.append("author_ids", data.author_ids.join(","));
   formData.append("topic_ids", data.topic_ids.join(","));

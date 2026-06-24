@@ -73,7 +73,7 @@ async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existin
         json={"name": "Искусственный интеллект", "description": "ИИ"},
     )
 
-    def fake_extract(_content: bytes):
+    def fake_extract(_content: bytes, original_name: str | None = None):
         return ExtractedPublicationMetadata(
             title="Искусственный интеллект в научных публикациях",
             year=2024,
@@ -83,6 +83,9 @@ async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existin
             authors=["Иванов И.И."],
             keywords=["RAG", "искусственный интеллект"],
             topics=[],
+            title_source="pdf",
+            title_confidence="high",
+            title_warning=None,
         )
 
     monkeypatch.setattr(source_files, "extract_publication_metadata_from_bytes", fake_extract)
@@ -96,7 +99,11 @@ async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existin
 
     data = response.json()
     assert data["status"] == "metadata_extracted"
+    assert data["review_status"] == "needs_review"
     assert data["extracted"]["title"] == "Искусственный интеллект в научных публикациях"
+    assert data["extracted"]["title_source"] == "pdf"
+    assert data["extracted"]["title_confidence"] == "high"
+    assert data["extracted"]["title_warning"] is None
     assert data["extracted"]["authors"] == ["Иванов И.И."]
     assert data["extracted"]["topics"] == ["Искусственный интеллект"]
 
@@ -127,7 +134,7 @@ async def test_create_publication_resolves_confirmed_names_only_on_submit(client
 
     data = response.json()
     assert len(data["authors"]) == 1
-    assert data["authors"][0]["full_name"] == "Иванов И. И."
+    assert data["authors"][0]["full_name"] == "Иванов И.И."
     assert len(data["topics"]) == 1
     assert data["topics"][0]["name"] == "Искусственный интеллект"
     assert len(data["keywords"]) == 1

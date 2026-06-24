@@ -1,4 +1,4 @@
-interface StatusBadgeProps {
+﻿interface StatusBadgeProps {
   value: string;
 }
 
@@ -11,6 +11,12 @@ const statusLabels: Record<string, string> = {
   error: "Ошибка",
   review: "На проверке",
   pending: "Ожидает",
+  needs_review: "Требует проверки",
+  saved: "Сохранено",
+  duplicate: "Дубль",
+  skipped: "Пропущено",
+  completed: "Завершено",
+  completed_with_errors: "Есть ошибки",
 };
 
 export function StatusBadge({ value }: StatusBadgeProps) {

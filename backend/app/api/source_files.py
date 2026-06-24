@@ -128,6 +128,7 @@ async def extract_pdf_metadata(
         return SourceFileMetadataPreview(
             status="duplicate_file",
             file_hash=file_hash,
+            review_status="blocked",
             duplicate_source_file_id=existing_file.id,
             message="Такой PDF уже загружался. Выберите его из списка уже загруженных файлов или загрузите другой PDF.",
             extracted=None,
@@ -142,6 +143,7 @@ async def extract_pdf_metadata(
         return SourceFileMetadataPreview(
             status="metadata_error",
             file_hash=file_hash,
+            review_status="manual_entry",
             message=f"PDF выбран, но не удалось извлечь метаданные: {exc}",
             extracted=None,
     )
@@ -150,6 +152,7 @@ async def extract_pdf_metadata(
         return SourceFileMetadataPreview(
             status="metadata_error",
             file_hash=file_hash,
+            review_status="manual_entry",
             message="PDF выбран, но метаданные не были извлечены.",
             extracted=None,
         )
@@ -159,7 +162,7 @@ async def extract_pdf_metadata(
         title=extracted.title,
         keywords=extracted.keywords,    
     )
-    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])
+    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
 
     author_match_result = await match_existing_authors(db, extracted.authors)
     keyword_match_result = await match_existing_keywords(db, extracted.keywords)
@@ -168,8 +171,12 @@ async def extract_pdf_metadata(
     return SourceFileMetadataPreview(
         status="metadata_extracted",
         file_hash=file_hash,
+        review_status="needs_review",
         extracted=ExtractedPublicationMetadataRead(
             title=extracted.title,
+            title_source=extracted.title_source,
+            title_confidence=extracted.title_confidence,
+            title_warning=extracted.title_warning,
             year=extracted.year,
             language=extracted.language,
             publication_type=extracted.publication_type,

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 
 import { authorsApi } from "../api/authorsApi";
 import { keywordsApi } from "../api/keywordsApi";
+import { publicationImportsApi } from "../api/publicationImportsApi";
 import { publicationsApi } from "../api/publicationsApi";
 import { sourceFilesApi } from "../api/sourceFilesApi";
 import { topicsApi } from "../api/topicsApi";
@@ -23,6 +24,7 @@ const emptyForm: PublicationFormData = {
   doi: "",
   status: "draft",
   source_file_id: "",
+  import_item_id: "",
   author_ids: [],
   topic_ids: [],
   keyword_ids: [],
@@ -53,6 +55,9 @@ type CatalogMatch = {
 
 type ExtractedWithMatches = {
   title?: string | null;
+  title_source?: string | null;
+  title_confidence?: string | null;
+  title_warning?: string | null;
   year?: number | null;
   language?: string | null;
   publication_type?: string | null;
@@ -95,6 +100,9 @@ function getNewNames(newNames?: string[], fallbackNames?: string[]) {
 
 export function PublicationCreatePage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const importItemId = searchParams.get("import_item_id");
+  const batchId = searchParams.get("batch_id");
 
   const [authors, setAuthors] = useState<Author[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
@@ -104,6 +112,7 @@ export function PublicationCreatePage() {
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
+  const [metadataReviewStatus, setMetadataReviewStatus] = useState<"idle" | "needs_review" | "manual_entry">("idle");
   const [isSaving, setIsSaving] = useState(false);
   const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
 
@@ -123,8 +132,134 @@ export function PublicationCreatePage() {
       .catch(() => setError("Не удалось загрузить справочники"));
   }, []);
 
+  useEffect(() => {
+    if (!importItemId) {
+      return;
+    }
+
+    setIsExtractingMetadata(true);
+    setMetadataReviewStatus("idle");
+    setMetadataMessage("");
+    setError("");
+
+    publicationImportsApi
+      .getItem(Number(importItemId))
+      .then((item) => {
+        const extracted = item.extracted_metadata as ExtractedWithMatches | null;
+
+        if (!extracted) {
+          setMetadataReviewStatus("manual_entry");
+          setMetadataMessage("Данные из PDF не найдены. Карточку можно заполнить вручную.");
+          setFormData((prev) => ({
+            ...prev,
+            import_item_id: String(item.id),
+            source_file_id: item.source_file_id ? String(item.source_file_id) : prev.source_file_id,
+          }));
+          return;
+        }
+
+        applyExtractedMetadata(extracted, {
+          sourceFileId: item.source_file_id,
+          importItemId: String(item.id),
+          replaceSelection: true,
+        });
+        setMetadataReviewStatus("needs_review");
+        setMetadataMessage(
+          [
+            "Данные автоматически извлечены из PDF. Проверьте название, авторов, темы и ключевые слова перед сохранением.",
+            extracted.title_warning,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        );
+      })
+      .catch((err) => {
+        setMetadataReviewStatus("manual_entry");
+        setMetadataMessage("Не удалось загрузить данные массового импорта. Карточку можно заполнить вручную.");
+        setError(err instanceof Error ? err.message : "Не удалось загрузить данные массового импорта");
+      })
+      .finally(() => setIsExtractingMetadata(false));
+  }, [importItemId]);
+
   function updateForm<K extends keyof PublicationFormData>(key: K, value: PublicationFormData[K]) {
     setFormData((prev) => ({ ...prev, [key]: value }));
+  }
+
+  function applyExtractedMetadata(
+    extracted: ExtractedWithMatches,
+    options: { sourceFileId?: number | null; importItemId?: string; replaceSelection?: boolean } = {},
+  ) {
+    const matchedAuthorIds = getMatchedIds(extracted.matched_author_ids, extracted.matched_authors);
+    const matchedTopicIds = getMatchedIds(extracted.matched_topic_ids, extracted.matched_topics);
+    const matchedKeywordIds = getMatchedIds(extracted.matched_keyword_ids, extracted.matched_keywords);
+
+    const newAuthorNames = getNewNames(extracted.new_authors, extracted.authors);
+    const newTopicNames = getNewNames(extracted.new_topics, extracted.topics);
+    const newKeywordNames = getNewNames(extracted.new_keywords, extracted.keywords);
+
+    setAuthors((prev) =>
+      mergeById(
+        prev,
+        (extracted.matched_authors ?? []).map(
+          (author) =>
+            ({
+              id: author.id,
+              full_name: author.name,
+              organization: "",
+            }) as Author,
+        ),
+      ),
+    );
+
+    setTopics((prev) =>
+      mergeById(
+        prev,
+        (extracted.matched_topics ?? []).map(
+          (topic) =>
+            ({
+              id: topic.id,
+              name: topic.name,
+              description: "",
+            }) as Topic,
+        ),
+      ),
+    );
+
+    setKeywords((prev) =>
+      mergeById(
+        prev,
+        (extracted.matched_keywords ?? []).map(
+          (keyword) =>
+            ({
+              id: keyword.id,
+              name: keyword.name,
+            }) as Keyword,
+        ),
+      ),
+    );
+
+    setFormData((prev) => ({
+      ...prev,
+      title: extracted.title || prev.title,
+      year: extracted.year ? String(extracted.year) : prev.year,
+      language: extracted.language || prev.language,
+      publication_type: extracted.publication_type || prev.publication_type,
+      doi: extracted.doi || prev.doi,
+      source_file_id: options.sourceFileId ? String(options.sourceFileId) : prev.source_file_id,
+      import_item_id: options.importItemId ?? prev.import_item_id,
+      author_ids: options.replaceSelection
+        ? uniqueIds(matchedAuthorIds)
+        : uniqueIds([...prev.author_ids, ...matchedAuthorIds]),
+      topic_ids: options.replaceSelection
+        ? uniqueIds(matchedTopicIds)
+        : uniqueIds([...prev.topic_ids, ...matchedTopicIds]),
+      keyword_ids: options.replaceSelection
+        ? uniqueIds(matchedKeywordIds)
+        : uniqueIds([...prev.keyword_ids, ...matchedKeywordIds]),
+      author_names: newAuthorNames.join("; "),
+      topic_names: newTopicNames.join("; "),
+      keyword_names: newKeywordNames.join("; "),
+    }));
   }
 
   async function handleCreateAuthor(fullName: string) {
@@ -148,6 +283,7 @@ export function PublicationCreatePage() {
   async function handlePdfSelected(file: File | null) {
     setSelectedPdfFile(file);
     setMetadataMessage("");
+    setMetadataReviewStatus("idle");
 
     if (!file) {
       return;
@@ -167,7 +303,8 @@ export function PublicationCreatePage() {
       const extracted = preview.extracted as ExtractedWithMatches | null;
 
       if (!extracted) {
-        setMetadataMessage("PDF выбран. Данные для автозаполнения не найдены.");
+        setMetadataReviewStatus("manual_entry");
+        setMetadataMessage("PDF выбран, но данные для автозаполнения не найдены. Заполните карточку вручную.");
         return;
       }
 
@@ -230,6 +367,7 @@ export function PublicationCreatePage() {
         publication_type: extracted.publication_type || prev.publication_type,
         doi: extracted.doi || prev.doi,
         source_file_id: "",
+  import_item_id: "",
 
         // Уже существующие записи сразу отмечаются в MultiSelect.
         author_ids: uniqueIds([...prev.author_ids, ...matchedAuthorIds]),
@@ -244,11 +382,18 @@ export function PublicationCreatePage() {
         keyword_names: newKeywordNames.join("; "),
       }));
 
+      setMetadataReviewStatus("needs_review");
       setMetadataMessage(
-        `PDF выбран. Найдено в БД: авторов — ${matchedAuthorIds.length}, тем — ${matchedTopicIds.length}, ключевых слов — ${matchedKeywordIds.length}. Новые значения подставлены в поля ниже — проверьте их перед сохранением.`,
+        [
+          "Данные автоматически извлечены из PDF. Проверьте название, авторов, темы и ключевые слова перед сохранением.",
+          extracted.title_warning,
+        ]
+          .filter(Boolean)
+          .join(" "),
       );
     } catch (err) {
-      setMetadataMessage("");
+      setMetadataReviewStatus("manual_entry");
+      setMetadataMessage("Не удалось автоматически извлечь данные из PDF. Карточку можно заполнить вручную.");
       setError(err instanceof Error ? err.message : "Не удалось извлечь данные из PDF");
     } finally {
       setIsExtractingMetadata(false);
@@ -271,7 +416,7 @@ export function PublicationCreatePage() {
         ? await publicationsApi.createWithFile(formData, selectedPdfFile)
         : await publicationsApi.create(formData);
 
-      navigate(`/admin/publications/${created.id}`);
+      navigate(batchId ? `/admin/publications/import?batch_id=${batchId}` : `/admin/publications/${created.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать публикацию");
     } finally {
@@ -292,7 +437,11 @@ export function PublicationCreatePage() {
       />
 
       {error && <p className="error">{error}</p>}
-      {metadataMessage && <p className="success">{metadataMessage}</p>}
+      {metadataMessage && (
+        <p className={metadataReviewStatus === "needs_review" ? "warning" : "success"}>
+          {metadataMessage}
+        </p>
+      )}
 
       <section className="card page-section">
         <form className="form" onSubmit={handleSubmit}>
@@ -326,6 +475,7 @@ export function PublicationCreatePage() {
           <label>
             Название *
             <input
+              className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
               value={formData.title}
               onChange={(event) => updateForm("title", event.target.value)}
               placeholder="Название публикации"
@@ -406,13 +556,14 @@ export function PublicationCreatePage() {
             <label>
               Авторы из PDF
               <textarea
+                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
                 rows={3}
                 value={formData.author_names}
                 onChange={(event) => updateForm("author_names", event.target.value)}
                 placeholder="Демонтерова Е.И.; Левицкий И.В.; Иванов А.В."
               />
               <span className="muted">
-                Здесь остаются только новые авторы, которых backend не нашёл в БД. Совпавшие авторы уже отмечены выше.
+                Проверьте предложенных авторов: удалите ошибочные значения или исправьте написание перед сохранением.
               </span>
             </label>
           </div>
@@ -434,13 +585,14 @@ export function PublicationCreatePage() {
             <label>
               Темы из PDF
               <textarea
+                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
                 rows={2}
                 value={formData.topic_names}
                 onChange={(event) => updateForm("topic_names", event.target.value)}
                 placeholder="Островодужные базальты; Платиновая группа"
               />
               <span className="muted">
-                Совпавшие темы отмечаются выше. Новые темы можно отредактировать перед сохранением.
+                Проверьте предложенные темы: оставьте только подходящие для публикации.
               </span>
             </label>
           </div>
@@ -462,6 +614,7 @@ export function PublicationCreatePage() {
             <label>
               Ключевые слова из PDF
               <textarea
+                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
                 rows={3}
                 value={formData.keyword_names}
                 onChange={(event) => updateForm("keyword_names", event.target.value)}
@@ -475,10 +628,17 @@ export function PublicationCreatePage() {
 
           <div className="form-actions">
             <button className="button" type="submit" disabled={isSaving || isExtractingMetadata}>
-              {isSaving ? "Сохраняем..." : "Создать публикацию"}
+              {isSaving
+                ? "Сохраняем..."
+                : metadataReviewStatus === "needs_review"
+                  ? "Проверить и создать публикацию"
+                  : "Создать публикацию"}
             </button>
 
-            <Link className="button button_secondary" to="/admin/publications">
+            <Link
+              className="button button_secondary"
+              to={batchId ? `/admin/publications/import?batch_id=${batchId}` : "/admin/publications"}
+            >
               Отмена
             </Link>
           </div>
@@ -487,3 +647,12 @@ export function PublicationCreatePage() {
     </section>
   );
 }
+
+
+
+
+
+
+
+
+

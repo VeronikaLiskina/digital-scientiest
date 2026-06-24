@@ -1,4 +1,4 @@
-@use "../abstracts/variables" as *;
+﻿@use "../abstracts/variables" as *;
 
 body {
   font-family:
@@ -28,7 +28,13 @@ body {
   color: $success;
 }
 
+.warning {
+  color: $warning;
+  font-weight: 600;
+}
+
 .error {
   color: $error;
   font-weight: 600;
 }
+

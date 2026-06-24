@@ -1,4 +1,4 @@
-@use "../abstracts/mixins" as *;
+﻿@use "../abstracts/mixins" as *;
 
 .publications-page__filters {
   display: grid;
@@ -21,5 +21,53 @@
 
   @include respond-tablet {
     grid-template-columns: 1fr;
+  }
+}
+
+.publication-create-page .auto-filled-field {
+  border-color: rgba(183, 121, 31, 0.55);
+  background: rgba(183, 121, 31, 0.06);
+}
+
+.publication-create-page .auto-filled-field:focus {
+  border-color: rgba(183, 121, 31, 0.85);
+  box-shadow: 0 0 0 3px rgba(183, 121, 31, 0.12);
+}
+
+.publication-import-page__upload {
+  display: grid;
+  gap: 16px;
+}
+
+.publication-import-page__selected {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid #d9e3f2;
+  border-radius: 8px;
+  background: #f8fbff;
+
+  ul {
+    display: grid;
+    gap: 6px;
+    margin: 0;
+    padding-left: 18px;
+  }
+}
+
+.publication-import-page__summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 16px;
+
+  span {
+    min-height: 28px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: #eef3fb;
+    color: #4f607d;
+    font-size: 14px;
+    font-weight: 600;
   }
 }

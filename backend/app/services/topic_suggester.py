@@ -33,7 +33,7 @@ async def suggest_topic_names(
     if not haystack:
         return []
 
-    suggested: list[str] = []
+    scored: list[tuple[int, str]] = []
     seen: set[str] = set()
 
     for topic in topics:
@@ -43,7 +43,25 @@ async def suggest_topic_names(
             continue
 
         if normalized_topic_name in haystack and normalized_topic_name not in seen:
-            suggested.append(topic.name)
+            score = 10 + len(normalized_topic_name.split())
+            scored.append((score, topic.name))
+            seen.add(normalized_topic_name)
+            continue
+
+        topic_tokens = {
+            token
+            for token in normalized_topic_name.split()
+            if len(token) >= 5
+        }
+
+        if not topic_tokens:
+            continue
+
+        matches = sum(1 for token in topic_tokens if token in haystack)
+
+        if matches and normalized_topic_name not in seen:
+            scored.append((matches, topic.name))
             seen.add(normalized_topic_name)
 
-    return suggested
+    scored.sort(key=lambda item: (-item[0], item[1]))
+    return [name for _score, name in scored[:5]]
