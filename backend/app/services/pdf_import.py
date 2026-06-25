@@ -568,11 +568,14 @@ def _filename_title_quality(title: str | None, *, raw_title: str | None = None) 
     if DATE_FILENAME_RE.search(raw_compact):
         return 0
 
-    if separators_count >= 3:
-        return 1
-
     alpha_chars = re.findall(r"[A-Za-zА-Яа-яЁё]", normalized)
     words = re.findall(r"[A-Za-zА-Яа-яЁё]{3,}", normalized)
+
+    # Большое число разделителей само по себе не делает имя файла плохим:
+    # нормальное название статьи тоже может быть записано через _ или -.
+    # Понижаем качество только если после очистки не получается полноценное название.
+    if separators_count >= 3 and len(words) < 4:
+        return 1
 
     if len(alpha_chars) < 8 or len(words) < 2:
         return 0
@@ -1011,29 +1014,51 @@ def _select_title(
     filename_title: str | None,
     filename_quality: int,
 ) -> tuple[str | None, str, str, str | None]:
+    """
+    Выбирает итоговое название публикации.
+
+    Для текущего MVP имя файла снова является основным источником title,
+    если оно похоже на нормальное название статьи. Это стабильнее для уже
+    разделённых PDF-статей, где файл часто называется по названию публикации.
+
+    Извлечение title из текста PDF используем только как fallback:
+    - если имя файла техническое;
+    - если имя файла начинается с номера/служебного идентификатора;
+    - если имя файла похоже на hash, scan, article_001 и т.п.
+    """
+
     pdf_quality = _pdf_title_quality(pdf_title_match)
 
-    if pdf_title_match is not None and pdf_quality >= max(filename_quality, 4):
+    # Главное изменение: если имя файла качественное, не перебиваем его
+    # эвристическим title из PDF. Именно PDF title extraction давал много
+    # ложных заголовков из журналов, сборников, содержания и служебных блоков.
+    if filename_title and filename_quality >= 4:
+        confidence = "high" if filename_quality >= 5 else "medium"
+        warning = None
+        if confidence != "high":
+            warning = "Название взято из имени файла, проверьте корректность."
+
+        return (
+            filename_title,
+            "filename",
+            confidence,
+            warning,
+        )
+
+    # Если имя файла техническое или неинформативное, пробуем взять title из PDF.
+    if pdf_title_match is not None and pdf_quality >= 4:
         confidence = _title_confidence(pdf_quality)
         warning = None
         if confidence != "high":
             warning = "Название извлечено из PDF с невысокой уверенностью, проверьте корректность."
         return pdf_title_match.title, "pdf", confidence, warning
 
-    if filename_title and filename_quality >= 4 and filename_quality > pdf_quality:
-        return (
-            filename_title,
-            "filename",
-            _title_confidence(filename_quality),
-            "Название взято из имени файла, проверьте корректность.",
-        )
-
     if pdf_title_match is not None and pdf_quality > 0:
         return (
             pdf_title_match.title,
             "pdf",
             "low",
-            "Название извлечено из PDF с низкой уверенностью, проверьте и исправьте его.",
+            "Имя файла не похоже на название, поэтому название извлечено из PDF с низкой уверенностью. Проверьте и исправьте его.",
         )
 
     return (
@@ -2435,6 +2460,80 @@ def _extract_keywords_from_focused_text(
     return _dedupe_phrases([*title_keywords, *focused_keywords])[:10]
 
 
+def _metadata_title_from_filename(original_name: str | None) -> str | None:
+    """
+    Мягкий вариант title из имени файла только для keywords/topics.
+
+    Важно: это НЕ основной title публикации. Здесь можно использовать даже
+    техническое имя вида ``027_rannekembriyskiy_vysokokalievy_m.pdf`` как
+    дополнительную подсказку для ключевых слов, потому что раньше это давало
+    более стабильные темы, чем частотный анализ всего PDF.
+    """
+
+    candidate = _filename_title_candidate(original_name)
+
+    if not candidate:
+        return None
+
+    candidate = re.sub(r"^\s*\d{1,4}[-_\s]+", "", candidate)
+    candidate = re.sub(r"\b(?:article|file|document|scan|paper|pdf)\s*\d*\b", " ", candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"\s+", " ", candidate).strip(" -–—_.")
+
+    if len(candidate) < 8:
+        return None
+
+    return candidate
+
+
+def _select_keyword_seed_title(
+    *,
+    title: str | None,
+    title_confidence: str,
+    filename_metadata_title: str | None,
+) -> str | None:
+    """
+    Выбирает безопасный текст-источник для автопредложений keywords/topics.
+
+    Не используем весь PDF как источник по умолчанию: из него часто вылезают
+    организации, названия сборников, сноски, соседние статьи и случайные n-grams.
+    """
+
+    if title and title_confidence in {"high", "medium"} and not _is_bad_extracted_title(title):
+        return title
+
+    if filename_metadata_title:
+        return filename_metadata_title
+
+    if title and not _is_bad_extracted_title(title):
+        return title
+
+    return None
+
+
+def _extract_keywords_from_title_source(
+    title_source: str | None,
+    *,
+    language: str | None,
+) -> list[str]:
+    """
+    Консервативная генерация keywords: только из title/filename.
+
+    Это намеренно проще, чем частотный анализ всего PDF. Для MVP лучше получить
+    3–8 проверяемых подсказок, чем много мусора из текста статьи.
+    """
+
+    if not title_source:
+        return []
+
+    return _dedupe_phrases(
+        _extract_title_phrase_seeds(
+            title_source,
+            language=language,
+            limit=10,
+        )
+    )[:8]
+
+
 def _extract_topics_from_keywords(
     *,
     title: str | None,
@@ -2633,26 +2732,30 @@ def extract_publication_metadata_from_pdf(
     )
 
     explicit_keywords = _extract_keywords(full_text)
+    filename_metadata_title = _metadata_title_from_filename(original_filename)
+    keyword_seed_title = _select_keyword_seed_title(
+        title=title,
+        title_confidence=title_confidence,
+        filename_metadata_title=filename_metadata_title,
+    )
 
     if explicit_keywords:
+        # Если в PDF есть явный блок "Ключевые слова" / "Keywords", доверяем ему.
+        # Не смешиваем его с частотными фразами из текста, чтобы не засорять результат.
         keywords = _dedupe_phrases(explicit_keywords)[:12]
     else:
-        focused_keywords = _extract_keywords_from_focused_text(
-            full_text,
-            title=title,
+        # Без явного блока берём только title/filename как источник подсказок.
+        # Полнотекстовый frequent extraction временно отключён: он давал много мусора
+        # из организаций, сборников, сносок, таблиц и соседних статей.
+        keywords = _extract_keywords_from_title_source(
+            keyword_seed_title,
             language=language,
         )
-        frequent_keywords = _extract_keywords_from_frequency(
-            full_text,
-            title=title,
-            language=language,
-        )
-        keywords = _dedupe_phrases([*focused_keywords, *frequent_keywords])[:12]
 
     keywords = _filter_author_phrases(keywords, authors)
 
     topics = _extract_topics_from_keywords(
-        title=title,
+        title=keyword_seed_title,
         keywords=keywords,
     )
 
