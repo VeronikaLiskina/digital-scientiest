@@ -41,6 +41,9 @@ class PublicationUpdate(BaseModel):
     author_ids: list[int] | None = None
     topic_ids: list[int] | None = None
     keyword_ids: list[int] | None = None
+    author_names: list[str] | None = None
+    topic_names: list[str] | None = None
+    keyword_names: list[str] | None = None
 
 
 class PublicationRead(PublicationBase):

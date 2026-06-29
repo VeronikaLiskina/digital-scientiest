@@ -1,6 +1,9 @@
 import pytest
 
 
+TEST_EMBEDDING = [0.1] * 768
+
+
 async def create_publication(client):
     response = await client.post(
         "/api/publications",
@@ -31,7 +34,7 @@ async def test_create_document_chunk(client):
             "chunk_text": "Это первый фрагмент текста публикации.",
             "page_number": 1,
             "chunk_index": 0,
-            "embedding": [0.1, 0.2, 0.3],
+            "embedding": TEST_EMBEDDING,
         },
     )
 
@@ -44,7 +47,7 @@ async def test_create_document_chunk(client):
     assert data["chunk_text"] == "Это первый фрагмент текста публикации."
     assert data["page_number"] == 1
     assert data["chunk_index"] == 0
-    assert data["embedding"] == [0.1, 0.2, 0.3]
+    assert data["embedding"] == TEST_EMBEDDING
 
 
 @pytest.mark.asyncio

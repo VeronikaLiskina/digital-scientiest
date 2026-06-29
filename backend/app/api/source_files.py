@@ -16,6 +16,7 @@ from app.schemas.source_file import (
     SourceFileUpdate,
 )
 from app.services.pdf_import import (
+    extract_publication_metadata_from_pdf,
     extract_publication_metadata_from_bytes,
     find_source_file_by_hash,
     save_uploaded_pdf_as_source_file,
@@ -29,7 +30,6 @@ from app.services.metadata_matcher import (
     match_existing_keywords,
     match_existing_topics,
 )
-from app.utils import file_hash
 from app.utils.file_hash import calculate_file_hash
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
@@ -63,6 +63,52 @@ def _to_catalog_match_reads(result: CatalogMatchResult) -> list[CatalogMatchRead
         )
         for item in result.matches
     ]
+
+
+async def _build_metadata_preview(
+    db: AsyncSession,
+    *,
+    file_hash: str,
+    extracted,
+) -> SourceFileMetadataPreview:
+    existing_topic_suggestions = await suggest_topic_names(
+        db=db,
+        title=extracted.title,
+        keywords=extracted.keywords,
+    )
+    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
+
+    author_match_result = await match_existing_authors(db, extracted.authors)
+    keyword_match_result = await match_existing_keywords(db, extracted.keywords)
+    topic_match_result = await match_existing_topics(db, extracted.topics)
+
+    return SourceFileMetadataPreview(
+        status="metadata_extracted",
+        file_hash=file_hash,
+        review_status="needs_review",
+        extracted=ExtractedPublicationMetadataRead(
+            title=extracted.title,
+            title_source=extracted.title_source,
+            title_confidence=extracted.title_confidence,
+            title_warning=extracted.title_warning,
+            year=extracted.year,
+            language=extracted.language,
+            publication_type=extracted.publication_type,
+            doi=extracted.doi,
+            authors=extracted.authors,
+            keywords=extracted.keywords,
+            topics=extracted.topics,
+            matched_authors=_to_catalog_match_reads(author_match_result),
+            matched_author_ids=[item.id for item in author_match_result.matches],
+            new_authors=author_match_result.new_names,
+            matched_keywords=_to_catalog_match_reads(keyword_match_result),
+            matched_keyword_ids=[item.id for item in keyword_match_result.matches],
+            new_keywords=keyword_match_result.new_names,
+            matched_topics=_to_catalog_match_reads(topic_match_result),
+            matched_topic_ids=[item.id for item in topic_match_result.matches],
+            new_topics=topic_match_result.new_names,
+        ),
+    )
 
 
 @router.post("", response_model=SourceFileRead, status_code=status.HTTP_201_CREATED)
@@ -157,43 +203,10 @@ async def extract_pdf_metadata(
             extracted=None,
         )
 
-    existing_topic_suggestions = await suggest_topic_names(
-        db=db,
-        title=extracted.title,
-        keywords=extracted.keywords,    
-    )
-    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
-
-    author_match_result = await match_existing_authors(db, extracted.authors)
-    keyword_match_result = await match_existing_keywords(db, extracted.keywords)
-    topic_match_result = await match_existing_topics(db, extracted.topics)
-
-    return SourceFileMetadataPreview(
-        status="metadata_extracted",
+    return await _build_metadata_preview(
+        db,
         file_hash=file_hash,
-        review_status="needs_review",
-        extracted=ExtractedPublicationMetadataRead(
-            title=extracted.title,
-            title_source=extracted.title_source,
-            title_confidence=extracted.title_confidence,
-            title_warning=extracted.title_warning,
-            year=extracted.year,
-            language=extracted.language,
-            publication_type=extracted.publication_type,
-            doi=extracted.doi,
-            authors=extracted.authors,
-            keywords=extracted.keywords,
-            topics=extracted.topics,
-            matched_authors=_to_catalog_match_reads(author_match_result),
-            matched_author_ids=[item.id for item in author_match_result.matches],
-            new_authors=author_match_result.new_names,
-            matched_keywords=_to_catalog_match_reads(keyword_match_result),
-            matched_keyword_ids=[item.id for item in keyword_match_result.matches],
-            new_keywords=keyword_match_result.new_names,
-            matched_topics=_to_catalog_match_reads(topic_match_result),
-            matched_topic_ids=[item.id for item in topic_match_result.matches],
-            new_topics=topic_match_result.new_names,
-        ),
+        extracted=extracted,
     )
 
 
@@ -222,6 +235,46 @@ async def get_source_file(
         raise HTTPException(status_code=404, detail="Source file not found")
 
     return source_file
+
+
+@router.post("/{source_file_id}/extract-metadata", response_model=SourceFileMetadataPreview)
+async def extract_stored_pdf_metadata(
+    source_file_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    source_file = await db.get(SourceFile, source_file_id)
+
+    if source_file is None:
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    file_path = Path(source_file.file_path)
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on server")
+
+    preview_file_hash = source_file.file_hash or calculate_file_hash(
+        file_path.read_bytes()
+    )
+
+    try:
+        extracted = extract_publication_metadata_from_pdf(
+            file_path,
+            original_name=source_file.file_name,
+        )
+    except Exception as exc:
+        return SourceFileMetadataPreview(
+            status="metadata_error",
+            file_hash=preview_file_hash,
+            review_status="manual_entry",
+            message=f"PDF РЅР°Р№РґРµРЅ, РЅРѕ РЅРµ СѓРґР°Р»РѕСЃСЊ РёР·РІР»РµС‡СЊ РјРµС‚Р°РґР°РЅРЅС‹Рµ: {exc}",
+            extracted=None,
+        )
+
+    return await _build_metadata_preview(
+        db,
+        file_hash=preview_file_hash,
+        extracted=extracted,
+    )
 
 
 @router.get("/{source_file_id}/download")

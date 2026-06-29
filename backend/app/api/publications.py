@@ -533,7 +533,14 @@ async def update_publication(
 
     update_data = data.model_dump(
         exclude_unset=True,
-        exclude={"author_ids", "topic_ids", "keyword_ids"},
+        exclude={
+            "author_ids",
+            "topic_ids",
+            "keyword_ids",
+            "author_names",
+            "topic_names",
+            "keyword_names",
+        },
     )
 
     if "source_file_id" in update_data:
@@ -550,14 +557,26 @@ async def update_publication(
     for field, value in update_data.items():
         setattr(publication, field, value)
 
-    if data.author_ids is not None:
-        publication.authors = await get_items_by_ids(db, Author, data.author_ids)
+    if data.author_ids is not None or data.author_names is not None:
+        publication.authors = await resolve_authors(
+            db,
+            ids=data.author_ids or [],
+            names=data.author_names or [],
+        )
 
-    if data.topic_ids is not None:
-        publication.topics = await get_items_by_ids(db, Topic, data.topic_ids)
+    if data.topic_ids is not None or data.topic_names is not None:
+        publication.topics = await resolve_topics(
+            db,
+            ids=data.topic_ids or [],
+            names=data.topic_names or [],
+        )
 
-    if data.keyword_ids is not None:
-        publication.keywords = await get_items_by_ids(db, Keyword, data.keyword_ids)
+    if data.keyword_ids is not None or data.keyword_names is not None:
+        publication.keywords = await resolve_keywords(
+            db,
+            ids=data.keyword_ids or [],
+            names=data.keyword_names or [],
+        )
 
     await db.commit()
 

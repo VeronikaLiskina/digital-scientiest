@@ -6,6 +6,7 @@ import { authorsApi } from "../api/authorsApi";
 import { keywordsApi } from "../api/keywordsApi";
 import { publicationsApi } from "../api/publicationsApi";
 import { sourceFilesApi } from "../api/sourceFilesApi";
+import type { ExtractedPublicationMetadata } from "../api/sourceFilesApi";
 import { topicsApi } from "../api/topicsApi";
 import { MultiSelect } from "../components/common/MultiSelect";
 import { PageHeader } from "../components/common/PageHeader";
@@ -30,6 +31,59 @@ const emptyForm: PublicationFormData = {
   keyword_names: "",
 };
 
+function mergeIds(current: number[], incoming?: number[]) {
+  return Array.from(new Set([...current, ...(incoming ?? [])]));
+}
+
+function mergeNames(current: string, incoming?: string[]) {
+  const values = [
+    ...current
+      .split(/[;,\n]/)
+      .map((item) => item.trim())
+      .filter(Boolean),
+    ...(incoming ?? []),
+  ];
+
+  return Array.from(new Set(values)).join("\n");
+}
+
+function pickExtractedValue(
+  current: string,
+  incoming: string | number | null | undefined,
+  emptyOnly: boolean,
+) {
+  if (incoming === null || incoming === undefined || incoming === "") {
+    return current;
+  }
+
+  if (emptyOnly && current.trim()) {
+    return current;
+  }
+
+  return String(incoming);
+}
+
+function renderMetadataList(title: string, values?: string[]) {
+  const preparedValues = (values ?? []).filter(Boolean);
+
+  if (!preparedValues.length) {
+    return null;
+  }
+
+  return (
+    <div className="pdf-automation__result-group">
+      <p className="pdf-automation__result-title">{title}</p>
+      <div className="pdf-automation__chips">
+        {preparedValues.map((value) => (
+          <span className="pdf-automation__chip" key={`${title}-${value}`}>
+            {value}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function PublicationEditPage() {
   const { publicationId } = useParams();
   const id = Number(publicationId);
@@ -41,8 +95,13 @@ export function PublicationEditPage() {
   const [keywords, setKeywords] = useState<Keyword[]>([]);
   const [sourceFiles, setSourceFiles] = useState<SourceFile[]>([]);
   const [error, setError] = useState("");
+  const [metadataMessage, setMetadataMessage] = useState("");
+  const [extractedMetadata, setExtractedMetadata] =
+    useState<ExtractedPublicationMetadata | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [fillEmptyOnly, setFillEmptyOnly] = useState(true);
 
   useEffect(() => {
     if (!id) return;
@@ -98,6 +157,70 @@ export function PublicationEditPage() {
       ...prev,
       [key]: value,
     }));
+  }
+
+  function handleSourceFileChange(value: string) {
+    updateForm("source_file_id", value);
+    setExtractedMetadata(null);
+    setMetadataMessage("");
+  }
+
+  function applyExtractedMetadata(metadata: ExtractedPublicationMetadata) {
+    setFormData((prev) => ({
+      ...prev,
+      title: pickExtractedValue(prev.title, metadata.title, fillEmptyOnly),
+      year: pickExtractedValue(prev.year, metadata.year, fillEmptyOnly),
+      language: pickExtractedValue(prev.language, metadata.language, fillEmptyOnly),
+      publication_type: pickExtractedValue(
+        prev.publication_type,
+        metadata.publication_type,
+        fillEmptyOnly,
+      ),
+      doi: pickExtractedValue(prev.doi, metadata.doi, fillEmptyOnly),
+      author_ids: mergeIds(prev.author_ids, metadata.matched_author_ids),
+      topic_ids: mergeIds(prev.topic_ids, metadata.matched_topic_ids),
+      keyword_ids: mergeIds(prev.keyword_ids, metadata.matched_keyword_ids),
+      author_names: mergeNames(prev.author_names, metadata.new_authors),
+      topic_names: mergeNames(prev.topic_names, metadata.new_topics),
+      keyword_names: mergeNames(prev.keyword_names, metadata.new_keywords),
+    }));
+  }
+
+  async function handleExtractMetadata() {
+    const sourceFileId = Number(formData.source_file_id);
+
+    if (!sourceFileId) {
+      setMetadataMessage("Выберите PDF-файл для автоматического заполнения.");
+      return;
+    }
+
+    try {
+      setIsExtracting(true);
+      setError("");
+      setMetadataMessage("");
+      setExtractedMetadata(null);
+
+      const preview = await sourceFilesApi.extractStoredMetadata(sourceFileId);
+
+      if (!preview.extracted) {
+        setMetadataMessage(
+          preview.message || "Не удалось извлечь метаданные из PDF.",
+        );
+        return;
+      }
+
+      applyExtractedMetadata(preview.extracted);
+      setExtractedMetadata(preview.extracted);
+      setMetadataMessage("Данные из PDF применены к форме. Проверьте результат перед сохранением.");
+    } catch (err) {
+      setMetadataMessage(
+        err instanceof Error
+          ? err.message
+          : "Не удалось обработать PDF для автозаполнения.",
+      );
+    } finally {
+      setIsExtracting(false);
+    }
   }
 
   async function handleCreateAuthor(fullName: string) {
@@ -168,7 +291,7 @@ export function PublicationEditPage() {
             Исходный файл
             <select
               value={formData.source_file_id}
-              onChange={(event) => updateForm("source_file_id", event.target.value)}
+              onChange={(event) => handleSourceFileChange(event.target.value)}
             >
               <option value="">Без файла</option>
               {sourceFiles.map((file) => (
@@ -178,6 +301,80 @@ export function PublicationEditPage() {
               ))}
             </select>
           </label>
+
+          <div className="pdf-automation">
+            <div className="pdf-automation__content">
+              <p className="pdf-automation__title">Автозаполнение из PDF</p>
+              <label className="pdf-automation__toggle">
+                <input
+                  type="checkbox"
+                  checked={fillEmptyOnly}
+                  onChange={(event) => setFillEmptyOnly(event.target.checked)}
+                />
+                <span>Заполнять только пустые поля</span>
+              </label>
+              {metadataMessage && (
+                <p className="pdf-automation__message">{metadataMessage}</p>
+              )}
+            </div>
+
+            <div className="pdf-automation__actions">
+              {extractedMetadata && (
+                <button
+                  className="button button_secondary"
+                  type="button"
+                  onClick={() => applyExtractedMetadata(extractedMetadata)}
+                >
+                  Применить снова
+                </button>
+              )}
+
+              <button
+                className="button button_secondary"
+                type="button"
+                disabled={!formData.source_file_id || isExtracting}
+                onClick={handleExtractMetadata}
+              >
+                {isExtracting
+                  ? "Обрабатываем..."
+                  : extractedMetadata
+                    ? "Обновить из PDF"
+                    : "Заполнить из PDF"}
+              </button>
+            </div>
+          </div>
+
+          {extractedMetadata && (
+            <div className="pdf-automation__preview">
+              {extractedMetadata.title_warning && (
+                <p className="pdf-automation__warning">
+                  {extractedMetadata.title_warning}
+                </p>
+              )}
+
+              <div className="pdf-automation__summary">
+                <span>Заголовок: {extractedMetadata.title || "не найден"}</span>
+                <span>Год: {extractedMetadata.year || "не найден"}</span>
+                <span>DOI: {extractedMetadata.doi || "не найден"}</span>
+              </div>
+
+              {renderMetadataList("Авторы из PDF", extractedMetadata.authors)}
+              {renderMetadataList("Темы из PDF", extractedMetadata.topics)}
+              {renderMetadataList("Ключевые слова из PDF", extractedMetadata.keywords)}
+              {renderMetadataList("Новые авторы", extractedMetadata.new_authors)}
+              {renderMetadataList("Новые темы", extractedMetadata.new_topics)}
+              {renderMetadataList("Новые ключевые слова", extractedMetadata.new_keywords)}
+
+              {(formData.author_names ||
+                formData.topic_names ||
+                formData.keyword_names) && (
+                <p>
+                  Новые значения будут созданы в справочниках после сохранения
+                  публикации.
+                </p>
+              )}
+            </div>
+          )}
 
           <label>
             Название *

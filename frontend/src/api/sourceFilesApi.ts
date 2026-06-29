@@ -63,6 +63,11 @@ export const sourceFilesApi = {
       formData,
     );
   },
+  extractStoredMetadata: (id: number) =>
+    apiClient.post<SourceFileMetadataPreview>(
+      `/source-files/${id}/extract-metadata`,
+      {},
+    ),
   update: (id: number, data: Partial<SourceFile>) =>
     apiClient.patch<SourceFile>(`/source-files/${id}`, data),
   delete: (id: number) => apiClient.delete<void>(`/source-files/${id}`),
