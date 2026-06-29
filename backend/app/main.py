@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
 from app.core.config import settings
-
+from app.api import search
 
 app = FastAPI(
     title="Digital Scientist API",
@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 app.include_router(api_router)
-
+app.include_router(search.router, prefix="/api/v1")
 
 @app.get("/health")
 async def health_check():

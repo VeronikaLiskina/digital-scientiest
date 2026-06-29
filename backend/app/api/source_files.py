@@ -2,10 +2,11 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import FileResponse
-from sqlalchemy import exc, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
+from app.dependencies import get_embedding_service
 from app.models.source_file import SourceFile
 from app.schemas.source_file import (
     CatalogMatchRead,
@@ -15,22 +16,24 @@ from app.schemas.source_file import (
     SourceFileRead,
     SourceFileUpdate,
 )
-from app.services.pdf_import import (
-    extract_publication_metadata_from_pdf,
-    extract_publication_metadata_from_bytes,
-    find_source_file_by_hash,
-    save_uploaded_pdf_as_source_file,
-    validate_pdf_upload,
-)
-from app.services.pdf_processing import process_pdf_file
-from app.services.topic_suggester import suggest_topic_names
+from app.services.embedding_service import EmbeddingService
 from app.services.metadata_matcher import (
     CatalogMatchResult,
     match_existing_authors,
     match_existing_keywords,
     match_existing_topics,
 )
+from app.services.pdf_import import (
+    extract_publication_metadata_from_bytes,
+    extract_publication_metadata_from_pdf,
+    find_source_file_by_hash,
+    save_uploaded_pdf_as_source_file,
+    validate_pdf_upload,
+)
+from app.services.pdf_processing import process_pdf_file
+from app.services.topic_suggester import suggest_topic_names
 from app.utils.file_hash import calculate_file_hash
+
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
 
@@ -41,10 +44,12 @@ def _merge_names(values: list[str]) -> list[str]:
 
     for value in values:
         value = value.strip()
+
         if not value:
             continue
 
         key = value.lower().replace("ё", "е")
+
         if key in seen:
             continue
 
@@ -76,7 +81,10 @@ async def _build_metadata_preview(
         title=extracted.title,
         keywords=extracted.keywords,
     )
-    extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
+
+    extracted.topics = _merge_names(
+        [*existing_topic_suggestions, *extracted.topics]
+    )[:5]
 
     author_match_result = await match_existing_authors(db, extracted.authors)
     keyword_match_result = await match_existing_keywords(db, extracted.keywords)
@@ -151,7 +159,7 @@ async def extract_pdf_metadata(
     """
     Предпросмотр данных из PDF для существующей формы создания публикации.
 
-    Важно: endpoint НЕ сохраняет файл и НЕ создает публикацию.
+    Endpoint не сохраняет файл и не создает публикацию.
     Он только:
     - проверяет PDF;
     - считает hash;
@@ -176,14 +184,17 @@ async def extract_pdf_metadata(
             file_hash=file_hash,
             review_status="blocked",
             duplicate_source_file_id=existing_file.id,
-            message="Такой PDF уже загружался. Выберите его из списка уже загруженных файлов или загрузите другой PDF.",
+            message=(
+                "Такой PDF уже загружался. Выберите его из списка уже "
+                "загруженных файлов или загрузите другой PDF."
+            ),
             extracted=None,
         )
 
     try:
         extracted = extract_publication_metadata_from_bytes(
-        content,
-        original_name=file.filename,
+            content,
+            original_name=file.filename,
         )
     except Exception as exc:
         return SourceFileMetadataPreview(
@@ -192,7 +203,7 @@ async def extract_pdf_metadata(
             review_status="manual_entry",
             message=f"PDF выбран, но не удалось извлечь метаданные: {exc}",
             extracted=None,
-    )
+        )
 
     if extracted is None:
         return SourceFileMetadataPreview(
@@ -266,7 +277,7 @@ async def extract_stored_pdf_metadata(
             status="metadata_error",
             file_hash=preview_file_hash,
             review_status="manual_entry",
-            message=f"PDF РЅР°Р№РґРµРЅ, РЅРѕ РЅРµ СѓРґР°Р»РѕСЃСЊ РёР·РІР»РµС‡СЊ РјРµС‚Р°РґР°РЅРЅС‹Рµ: {exc}",
+            message=f"PDF найден, но не удалось извлечь метаданные: {exc}",
             extracted=None,
         )
 
@@ -303,12 +314,15 @@ async def download_source_file(
 async def process_source_file(
     source_file_id: int,
     db: AsyncSession = Depends(get_db),
+    embedding_service: EmbeddingService = Depends(get_embedding_service),
 ):
     try:
         result = await process_pdf_file(
             db=db,
             source_file_id=source_file_id,
+            embedding_service=embedding_service,
         )
+
         return result
 
     except ValueError as exc:

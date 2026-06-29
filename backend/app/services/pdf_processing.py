@@ -1,4 +1,6 @@
+import asyncio
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 import re
 
@@ -10,6 +12,7 @@ from app.models.document_chunk import DocumentChunk
 from app.models.processing_log import ProcessingLog
 from app.models.publication import Publication
 from app.models.source_file import SourceFile
+from app.services.embedding_service import EmbeddingService
 
 
 MAX_CHUNK_SIZE = 1200
@@ -126,6 +129,13 @@ class TextBlock:
     text: str
 
 
+@dataclass
+class ChunkPayload:
+    chunk_text: str
+    page_number: int
+    chunk_index: int
+
+
 def add_section_breaks(text: str) -> str:
     """
     Иногда pypdf извлекает заголовок раздела в той же строке,
@@ -155,6 +165,16 @@ def detect_section_title(line: str) -> str | None:
             return section_title
 
     return None
+
+
+def clean_text_for_postgres(text: str | None) -> str:
+    if not text:
+        return ""
+
+    text = text.replace("\x00", "")
+    text = re.sub(r"[\x01-\x08\x0B\x0C\x0E-\x1F]", " ", text)
+
+    return text.strip()
 
 
 def clean_pdf_text(text: str) -> str:
@@ -430,6 +450,7 @@ async def add_processing_log(
 async def process_pdf_file(
     db: AsyncSession,
     source_file_id: int,
+    embedding_service: EmbeddingService,
 ) -> dict:
     source_file = await db.get(SourceFile, source_file_id)
 
@@ -507,7 +528,7 @@ async def process_pdf_file(
             status="success",
         )
 
-        new_chunks: list[DocumentChunk] = []
+        chunk_payloads: list[ChunkPayload] = []
         seen_fingerprints: set[str] = set()
         chunk_index = 0
 
@@ -520,6 +541,10 @@ async def process_pdf_file(
                     page_number=block.page_number,
                     chunk_text=raw_chunk_text,
                 )
+                chunk_text = clean_text_for_postgres(chunk_text)
+
+                if not chunk_text:
+                    continue
 
                 fingerprint = make_chunk_fingerprint(chunk_text)
 
@@ -528,19 +553,17 @@ async def process_pdf_file(
 
                 seen_fingerprints.add(fingerprint)
 
-                new_chunks.append(
-                    DocumentChunk(
-                        publication_id=publication.id,
+                chunk_payloads.append(
+                    ChunkPayload(
                         chunk_text=chunk_text,
                         page_number=block.page_number,
                         chunk_index=chunk_index,
-                        embedding=None,
                     )
                 )
 
                 chunk_index += 1
 
-        if not new_chunks:
+        if not chunk_payloads:
             source_file.processing_status = "error"
 
             await add_processing_log(
@@ -558,6 +581,42 @@ async def process_pdf_file(
         # Если публикация уже была обработана,
         # старые document_chunks удаляются,
         # а новые создаются заново.
+        chunk_texts = [chunk.chunk_text for chunk in chunk_payloads]
+
+        embeddings = await asyncio.to_thread(
+            embedding_service.embed_texts,
+            chunk_texts,
+        )
+
+        if len(embeddings) != len(chunk_payloads):
+            source_file.processing_status = "error"
+
+            await add_processing_log(
+                db=db,
+                source_file_id=source_file_id,
+                step_name="embedding",
+                status="error",
+                error_message="Embedding count does not match chunk count",
+            )
+
+            await db.commit()
+            raise ValueError("Embedding count does not match chunk count")
+
+        embedded_at = datetime.now(timezone.utc)
+
+        new_chunks = [
+            DocumentChunk(
+                publication_id=publication.id,
+                chunk_text=chunk.chunk_text,
+                page_number=chunk.page_number,
+                chunk_index=chunk.chunk_index,
+                embedding=embedding,
+                embedding_model=embedding_service.model_name,
+                embedded_at=embedded_at,
+            )
+            for chunk, embedding in zip(chunk_payloads, embeddings)
+        ]
+
         await db.execute(
             delete(DocumentChunk).where(
                 DocumentChunk.publication_id == publication.id
@@ -585,7 +644,12 @@ async def process_pdf_file(
         }
 
     except Exception as exc:
-        source_file.processing_status = "error"
+        await db.rollback()
+
+        source_file = await db.get(SourceFile, source_file_id)
+
+        if source_file is not None:
+            source_file.processing_status = "error"
 
         await add_processing_log(
             db=db,
@@ -595,5 +659,4 @@ async def process_pdf_file(
             error_message=str(exc),
         )
 
-        await db.commit()
         raise
