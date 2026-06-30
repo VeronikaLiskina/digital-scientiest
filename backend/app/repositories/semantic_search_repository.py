@@ -13,8 +13,13 @@ class SemanticSearchRepository:
         self,
         query_embedding: list[float],
         limit: int = 10,
+        min_similarity: float = 0.55,
     ) -> list[dict]:
         distance = DocumentChunk.embedding.cosine_distance(query_embedding)
+
+        # Берём результатов больше, чем limit, потому что часть потом
+        # может быть отсеяна по min_similarity.
+        search_limit = min(limit * 3, 100)
 
         stmt = (
             select(
@@ -28,21 +33,34 @@ class SemanticSearchRepository:
             .join(Publication, Publication.id == DocumentChunk.publication_id)
             .where(DocumentChunk.embedding.is_not(None))
             .order_by(distance)
-            .limit(limit)
+            .limit(search_limit)
         )
 
         result = await self.session.execute(stmt)
         rows = result.mappings().all()
 
-        return [
-            {
-                "chunk_id": row["chunk_id"],
-                "publication_id": row["publication_id"],
-                "chunk_index": row["chunk_index"],
-                "text": row["text"],
-                "publication_title": row["publication_title"],
-                "distance": float(row["distance"]),
-                "similarity": float(1 - row["distance"]),
-            }
-            for row in rows
-        ]
+        filtered_results: list[dict] = []
+
+        for row in rows:
+            row_distance = float(row["distance"])
+            similarity = 1 - row_distance
+
+            if similarity < min_similarity:
+                continue
+
+            filtered_results.append(
+                {
+                    "chunk_id": row["chunk_id"],
+                    "publication_id": row["publication_id"],
+                    "chunk_index": row["chunk_index"],
+                    "text": row["text"],
+                    "publication_title": row["publication_title"],
+                    "distance": row_distance,
+                    "similarity": similarity,
+                }
+            )
+
+            if len(filtered_results) >= limit:
+                break
+
+        return filtered_results

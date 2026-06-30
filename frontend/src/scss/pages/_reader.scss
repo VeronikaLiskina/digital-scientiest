@@ -159,6 +159,19 @@
   line-height: 1.5;
 }
 
+.reader-assistant__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.reader-assistant__query {
+  color: $muted;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
 .reader-assistant__answer {
   min-height: 190px;
   padding: 20px;
@@ -169,6 +182,46 @@
   p {
     margin: 0;
   }
+}
+
+.reader-assistant__results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+
+.reader-assistant__result {
+  padding: 16px;
+  border: 1px solid $border;
+  border-radius: $radius-sm;
+  background: $surface;
+
+  p {
+    margin-top: 10px;
+    color: $text;
+    line-height: 1.55;
+  }
+}
+
+.reader-assistant__result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: $muted;
+  font-size: 13px;
+  line-height: 1.35;
+
+  span {
+    flex-shrink: 0;
+    font-weight: 700;
+  }
+}
+
+.reader-assistant__source {
+  color: $primary;
+  font-weight: 800;
 }
 
 @include respond-tablet {
@@ -198,5 +251,9 @@
 
   .reader-publication-card {
     padding: 16px;
+  }
+
+  .reader-assistant__result-header {
+    flex-direction: column;
   }
 }

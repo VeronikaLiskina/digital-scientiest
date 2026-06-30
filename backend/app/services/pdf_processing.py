@@ -41,21 +41,6 @@ NOISE_PATTERNS = [
     r"^distributed under",
     r"^conditions of the Creative Commons",
     r"^Disclaimer/Publisher",
-    r"^https?://",
-    r"^doi:",
-    r"^Citation:",
-    r"^Academic Editors?:",
-    r"^Received:",
-    r"^Revised:",
-    r"^Accepted:",
-    r"^Published:",
-    r"^Copyright:",
-    r"^Licensee",
-    r"^This article is an open access",
-    r"^distributed under",
-    r"^conditions of the Creative Commons",
-    r"^Disclaimer/Publisher",
-
     # журнальные колонтитулы
     r"^\w+\s+\d{4},\s*\d+",
     r"^\d+\s+of\s+\d+$",
@@ -80,14 +65,11 @@ SECTION_PATTERNS = [
     (r"^Data Availability Statement:", "Back matter"),
     (r"^Conflicts of Interest:", "Back matter"),
     (r"^References\b", "References"),
-    (r"^Abstract:?", "Abstract"),
     (r"^Аннотация:?", "Аннотация"),
 
-    (r"^Keywords:?", "Keywords"),
     (r"^Key\s+words:?", "Keywords"),
     (r"^Ключевые\s+слова:?", "Ключевые слова"),
 
-    (r"^1\.\s+Introduction", "1. Introduction"),
     (r"^1\.\s+Введение", "1. Введение"),
     (r"^Введение\b", "Введение"),
 
@@ -98,7 +80,6 @@ SECTION_PATTERNS = [
     (r"^Заключение\b", "Заключение"),
     (r"^Выводы\b", "Выводы"),
 
-    (r"^References\b", "References"),
     (r"^Список\s+литературы\b", "References"),
     (r"^Литература\b", "References"),
 ]
@@ -193,7 +174,7 @@ def clean_pdf_text(text: str) -> str:
 
     if not text:
         return ""
-    
+
     text = normalize_pdf_text(text)
 
     # Удаляем мягкий перенос
