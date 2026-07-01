@@ -1034,9 +1034,7 @@ def _select_title(
     # ложных заголовков из журналов, сборников, содержания и служебных блоков.
     if filename_title and filename_quality >= 4:
         confidence = "high" if filename_quality >= 5 else "medium"
-        warning = None
-        if confidence != "high":
-            warning = "Название взято из имени файла, проверьте корректность."
+        warning = "Название взято из имени файла, проверьте корректность."
 
         return (
             filename_title,
@@ -1313,6 +1311,14 @@ LATIN_INITIAL_TO_RU = {
 }
 
 
+VISUAL_LATIN_INITIAL_TO_RU = {
+    "A": "А", "B": "В", "C": "С", "D": "Д", "E": "Е", "F": "Ф",
+    "G": "Г", "H": "Н", "I": "И", "J": "Ј", "K": "К", "L": "Л",
+    "M": "М", "N": "Н", "O": "О", "P": "Р", "R": "Р", "S": "С",
+    "T": "Т", "U": "У", "V": "В", "Y": "У", "Z": "З",
+}
+
+
 def _normalize_initial(value: str) -> str:
     value = value.strip(" .")
     if not value:
@@ -1321,6 +1327,46 @@ def _normalize_initial(value: str) -> str:
     initial = value[:1].upper()
     initial = LATIN_INITIAL_TO_RU.get(initial, initial)
     return f"{initial}."
+
+
+def _normalize_visual_initial(value: str) -> str:
+    value = value.strip(" .")
+    if not value:
+        return ""
+
+    initial = value[:1].upper()
+    initial = VISUAL_LATIN_INITIAL_TO_RU.get(initial, initial)
+    return f"{initial}."
+
+
+def _format_latin_initial_author_candidate(raw_name: str) -> str | None:
+    cleaned = _normalize_author_source(raw_name)
+
+    match = re.fullmatch(
+        r"([A-Z])\.\s*([A-Z])\.\s*([A-Z][a-zA-Z'’\-]+)",
+        cleaned,
+    )
+    if match:
+        first_initial, second_initial, last_name = match.groups()
+        formatted_last_name = last_name[:1].upper() + last_name[1:]
+        return (
+            f"{formatted_last_name} "
+            f"{_normalize_visual_initial(first_initial)}{_normalize_visual_initial(second_initial)}"
+        )
+
+    match = re.fullmatch(
+        r"([A-Z][a-zA-Z'’\-]+)\s+([A-Z])\.\s*([A-Z])\.?",
+        cleaned,
+    )
+    if match:
+        last_name, first_initial, second_initial = match.groups()
+        formatted_last_name = last_name[:1].upper() + last_name[1:]
+        return (
+            f"{formatted_last_name} "
+            f"{_normalize_visual_initial(first_initial)}{_normalize_visual_initial(second_initial)}"
+        )
+
+    return None
 
 
 def _format_author_canonical(
@@ -1463,6 +1509,11 @@ def normalize_author_display_name(raw_name: str) -> str | None:
     return format_author_display_name(raw_name)
 
 
+def _looks_like_affiliation_author_candidate(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 20) : start].lower()
+    return bool(re.search(r"\bим(?:ени|\.?)(?:\s+|$)", prefix))
+
+
 def _find_author_candidates(text: str) -> list[str]:
     text = _normalize_author_source(text)
 
@@ -1479,7 +1530,10 @@ def _find_author_candidates(text: str) -> list[str]:
 
     candidates: list[str] = []
     for pattern in patterns:
-        candidates.extend(re.findall(pattern, text))
+        for match in re.finditer(pattern, text):
+            if _looks_like_affiliation_author_candidate(text, match.start()):
+                continue
+            candidates.append(match.group(0))
 
     # Если regex не нашел, пробуем разрезать по разделителям и проверить куски.
     for part in re.split(r";|,|\n", text):
@@ -1534,16 +1588,28 @@ def _extract_patent_authors(text: str) -> list[str]:
     return _normalize_author_list(_find_author_candidates(match.group(1)))
 
 
-def _normalize_author_list(candidates: list[str]) -> list[str]:
+def _normalize_author_list(
+    candidates: list[str],
+    *,
+    preserve_latin_initial_surnames: bool = False,
+) -> list[str]:
     authors: list[str] = []
     seen: set[str] = set()
 
     for candidate in candidates:
-        normalized_author = normalize_author_display_name(candidate)
+        normalized_author = None
+
+        if preserve_latin_initial_surnames:
+            normalized_author = _format_latin_initial_author_candidate(candidate)
+
+        if normalized_author is None:
+            normalized_author = normalize_author_display_name(candidate)
+
         if not normalized_author:
             continue
 
-        normalized_author = format_author_display_name(normalized_author) or normalized_author
+        if not preserve_latin_initial_surnames:
+            normalized_author = format_author_display_name(normalized_author) or normalized_author
 
         key = _make_author_alias_key(normalized_author)
         if key in seen:
@@ -1821,9 +1887,26 @@ def _extract_authors_from_first_pages(pages: list[PageText]) -> list[str]:
     first_lines: list[str] = []
 
     for page in pages[:2]:
-        first_lines.extend(page.lines[:140])
+        for line in page.lines[:140]:
+            if REFERENCES_RE.search(line) or CONTENTS_RE.search(line):
+                break
 
-    return _extract_authors_from_lines(first_lines)
+            first_lines.append(line)
+
+    cleaned_lines = [
+        _clean_author_line(line)
+        for line in first_lines
+        if not _is_untrusted_author_line(line)
+    ]
+
+    if len(cleaned_lines) > 8:
+        cleaned_lines = cleaned_lines[:8]
+
+    text = ", ".join(line for line in cleaned_lines if line)
+    return _normalize_author_list(
+        _find_author_candidates(text),
+        preserve_latin_initial_surnames=True,
+    )
 
 
 def _extract_authors(
@@ -1847,9 +1930,16 @@ def _extract_authors(
     if title_zone_authors:
         return title_zone_authors[:10]
 
+    if kind == "conference_collection":
+        return []
+
     copyright_authors = _extract_authors_from_copyright_block(pages)
     if copyright_authors:
         return copyright_authors[:10]
+
+    first_page_authors = _extract_authors_from_first_pages(pages)
+    if first_page_authors:
+        return first_page_authors[:10]
 
     if kind in {"russian_journal", "geodynamics", "mdpi"}:
         citation_authors = _extract_authors_from_citation(

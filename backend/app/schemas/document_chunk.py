@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class DocumentChunkBase(BaseModel):
@@ -29,3 +29,10 @@ class DocumentChunkRead(DocumentChunkBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+    @field_serializer("embedding")
+    def serialize_embedding(self, embedding: list[float] | None) -> list[float] | None:
+        if embedding is None:
+            return None
+
+        return [round(float(value), 7) for value in embedding]

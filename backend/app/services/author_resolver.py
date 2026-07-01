@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import re
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +56,24 @@ def _canonical_author_name(value: str) -> str | None:
         return canonical
 
     return None
+
+
+def _looks_like_full_cyrillic_name(value: str) -> bool:
+    return bool(
+        re.fullmatch(
+            r"[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+",
+            value,
+        )
+    )
+
+
+def _author_storage_name(value: str, canonical_name: str) -> str:
+    cleaned = _clean_author_input(value)
+
+    if _looks_like_full_cyrillic_name(cleaned):
+        return cleaned
+
+    return canonical_name
 
 
 def _author_exact_key(value: str) -> str | None:
@@ -144,9 +163,6 @@ def _normalize_existing_author_if_needed(author: Author) -> None:
 
     if canonical_name is None:
         return
-
-    if author.full_name != canonical_name:
-        author.full_name = canonical_name
 
     author.normalized_name = normalize_author_name(canonical_name)
 
@@ -296,14 +312,14 @@ async def get_or_create_author(
     existing_author = await find_author_by_identity(
         db=db,
         full_name=canonical_name,
-        normalize_existing=True,
+        normalize_existing=False,
     )
 
     if existing_author is not None:
         return existing_author
 
     author = Author(
-        full_name=canonical_name,
+        full_name=_author_storage_name(full_name, canonical_name),
         normalized_name=normalize_author_name(canonical_name),
         organization=organization.strip() if organization else None,
     )

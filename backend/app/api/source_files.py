@@ -75,11 +75,13 @@ async def _build_metadata_preview(
     *,
     file_hash: str,
     extracted,
+    embedding_service=None,
 ) -> SourceFileMetadataPreview:
     existing_topic_suggestions = await suggest_topic_names(
         db=db,
         title=extracted.title,
         keywords=extracted.keywords,
+        embedding_service=embedding_service,
     )
 
     extracted.topics = _merge_names(
@@ -218,6 +220,7 @@ async def extract_pdf_metadata(
         db,
         file_hash=file_hash,
         extracted=extracted,
+        embedding_service=None,
     )
 
 
@@ -285,6 +288,7 @@ async def extract_stored_pdf_metadata(
         db,
         file_hash=preview_file_hash,
         extracted=extracted,
+        embedding_service=None,
     )
 
 

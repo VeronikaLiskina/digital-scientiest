@@ -1,5 +1,39 @@
 import pytest
 
+from app.models.topic import Topic
+from app.services.topic_suggester import suggest_topic_names
+from tests.conftest import TestingSessionLocal
+
+
+class FakeEmbeddingService:
+    def embed_texts(self, texts):
+        return [
+            [1.0, 0.0],
+            [0.9, 0.1],
+            [0.1, 0.9],
+        ]
+
+    def embed_text(self, text):
+        if "нейросет" in text.lower() or "модель" in text.lower():
+            return [0.95, 0.05]
+        return [0.1, 0.9]
+
+
+@pytest.mark.asyncio
+async def test_suggest_topic_names_uses_embedding_similarity_when_tokens_do_not_match():
+    async with TestingSessionLocal() as db:
+        db.add(Topic(name="Глубокое обучение", normalized_name="глубокое обучение"))
+        await db.commit()
+
+        result = await suggest_topic_names(
+            db,
+            title="Нейросетевые модели для анализа данных",
+            keywords=[],
+            embedding_service=FakeEmbeddingService(),
+        )
+
+    assert result == ["Глубокое обучение"]
+
 
 @pytest.mark.asyncio
 async def test_create_topic(client):

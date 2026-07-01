@@ -19,7 +19,7 @@ from app.models.publication_import import ImportBatch, ImportItem  # noqa: F401
 
 
 TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:nika@127.0.0.1:5432/digital_scientist_test"
+    "postgresql+asyncpg://postgres:nika@127.0.0.1:55432/digital_scientist_test"
 )
 
 test_engine = create_async_engine(

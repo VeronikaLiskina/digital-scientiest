@@ -8,6 +8,7 @@ from app.models.publication_import import ImportBatch, ImportItem
 from app.models.source_file import SourceFile
 from app.schemas.publication_import import ImportBatchRead, ImportItemRead
 from app.schemas.source_file import CatalogMatchRead, ExtractedPublicationMetadataRead
+from app.services.embedding_service import EmbeddingService
 from app.services.metadata_matcher import (
     CatalogMatchResult,
     match_existing_authors,
@@ -128,6 +129,7 @@ def _recalculate_batch(batch: ImportBatch, items: list[ImportItem]) -> None:
 async def _build_extracted_metadata_read(
     db: AsyncSession,
     source_file: SourceFile,
+    embedding_service: EmbeddingService | None = None,
 ) -> ExtractedPublicationMetadataRead:
     extracted = extract_publication_metadata_from_pdf(
         source_file.file_path,
@@ -138,6 +140,7 @@ async def _build_extracted_metadata_read(
         db=db,
         title=extracted.title,
         keywords=extracted.keywords,
+        embedding_service=embedding_service,
     )
     extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
 
@@ -175,6 +178,7 @@ async def _process_import_file(
     batch: ImportBatch,
     file: UploadFile,
     content: bytes,
+    embedding_service: EmbeddingService | None = None,
 ) -> ImportItem:
     filename = file.filename or "publication.pdf"
     item = ImportItem(
@@ -217,7 +221,11 @@ async def _process_import_file(
 
         item.source_file_id = source_file.id
 
-        extracted_read = await _build_extracted_metadata_read(db, source_file)
+        extracted_read = await _build_extracted_metadata_read(
+            db,
+            source_file,
+            embedding_service=embedding_service,
+        )
         item.extracted_metadata_json = extracted_read.model_dump(mode="json")
         item.title = extracted_read.title
         item.title_source = extracted_read.title_source

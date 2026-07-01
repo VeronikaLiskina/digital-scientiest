@@ -44,12 +44,20 @@ async def create_processing_log(
 @router.get("", response_model=list[ProcessingLogRead])
 async def get_processing_logs(
     source_file_id: int | None = Query(default=None),
+    publication_id: int | None = Query(default=None),
+    status: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
 ):
     query = select(ProcessingLog).order_by(ProcessingLog.created_at.desc())
 
     if source_file_id:
         query = query.where(ProcessingLog.source_file_id == source_file_id)
+
+    if publication_id:
+        query = query.where(ProcessingLog.publication_id == publication_id)
+
+    if status:
+        query = query.where(ProcessingLog.status == status)
 
     result = await db.execute(query)
     return result.scalars().all()

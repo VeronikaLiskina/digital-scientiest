@@ -13,6 +13,10 @@ from app.models.processing_log import ProcessingLog
 from app.models.publication import Publication
 from app.models.source_file import SourceFile
 from app.services.embedding_service import EmbeddingService
+from app.services.semantic_chunking import (
+    clean_text_for_semantic_chunking,
+    split_text_into_semantic_chunks,
+)
 
 
 MAX_CHUNK_SIZE = 1200
@@ -386,6 +390,26 @@ def split_text_into_chunks(text: str) -> list[str]:
     return chunks
 
 
+async def split_text_block_into_chunks(
+    text: str,
+    embedding_service: EmbeddingService,
+) -> list[str]:
+    cleaned_text = clean_text_for_semantic_chunking(text)
+
+    if not cleaned_text:
+        return []
+
+    semantic_chunks = await split_text_into_semantic_chunks(
+        cleaned_text,
+        embedding_service,
+    )
+
+    if semantic_chunks:
+        return semantic_chunks
+
+    return split_text_into_chunks(cleaned_text)
+
+
 def build_chunk_text(
     section_title: str,
     page_number: int,
@@ -415,12 +439,16 @@ async def add_processing_log(
     source_file_id: int,
     step_name: str,
     status: str,
+    publication_id: int | None = None,
+    message: str | None = None,
     error_message: str | None = None,
 ) -> None:
     log = ProcessingLog(
         source_file_id=source_file_id,
+        publication_id=publication_id,
         step_name=step_name,
         status=status,
+        message=message,
         error_message=error_message,
     )
 
@@ -438,42 +466,12 @@ async def process_pdf_file(
     if source_file is None:
         raise ValueError("Source file not found")
 
-    file_path = Path(source_file.file_path)
-
-    if not file_path.exists():
-        source_file.processing_status = "error"
-
-        await add_processing_log(
-            db=db,
-            source_file_id=source_file_id,
-            step_name="file_check",
-            status="error",
-            error_message="File not found on server",
-        )
-
-        await db.commit()
-        raise ValueError("File not found on server")
-
     publication_result = await db.execute(
-        select(Publication).where(
-            Publication.source_file_id == source_file_id
-        )
+        select(Publication).where(Publication.source_file_id == source_file_id)
     )
     publication = publication_result.scalar_one_or_none()
 
-    if publication is None:
-        source_file.processing_status = "requires_review"
-
-        await add_processing_log(
-            db=db,
-            source_file_id=source_file_id,
-            step_name="publication_check",
-            status="error",
-            error_message="Publication card is not linked to this source file",
-        )
-
-        await db.commit()
-        raise ValueError("Сначала создайте карточку публикации для этого файла")
+    file_path = Path(source_file.file_path)
 
     try:
         source_file.processing_status = "processing"
@@ -482,31 +480,30 @@ async def process_pdf_file(
         await add_processing_log(
             db=db,
             source_file_id=source_file_id,
-            step_name="file_check",
-            status="success",
+            publication_id=publication.id if publication is not None else None,
+            step_name="processing_started",
+            status="info",
+            message="PDF processing started",
         )
+
+        if not file_path.exists():
+            raise ValueError("File not found on server")
+
+        if publication is None:
+            raise ValueError("Сначала создайте карточку публикации для этого файла")
 
         text_blocks = extract_text_blocks(file_path)
 
         if not text_blocks:
-            source_file.processing_status = "error"
-
-            await add_processing_log(
-                db=db,
-                source_file_id=source_file_id,
-                step_name="text_extraction",
-                status="error",
-                error_message="Text was not extracted from PDF",
-            )
-
-            await db.commit()
             raise ValueError("Не удалось извлечь текст из PDF")
 
         await add_processing_log(
             db=db,
             source_file_id=source_file_id,
-            step_name="text_extraction",
+            publication_id=publication.id,
+            step_name="text_extracted",
             status="success",
+            message="Text extracted from PDF",
         )
 
         chunk_payloads: list[ChunkPayload] = []
@@ -514,7 +511,10 @@ async def process_pdf_file(
         chunk_index = 0
 
         for block in text_blocks:
-            chunks = split_text_into_chunks(block.text)
+            chunks = await split_text_block_into_chunks(
+                block.text,
+                embedding_service,
+            )
 
             for raw_chunk_text in chunks:
                 chunk_text = build_chunk_text(
@@ -545,23 +545,17 @@ async def process_pdf_file(
                 chunk_index += 1
 
         if not chunk_payloads:
-            source_file.processing_status = "error"
-
-            await add_processing_log(
-                db=db,
-                source_file_id=source_file_id,
-                step_name="chunking",
-                status="error",
-                error_message="No chunks were created",
-            )
-
-            await db.commit()
             raise ValueError("Не удалось создать чанки из PDF")
 
-        # Перезапись чанков.
-        # Если публикация уже была обработана,
-        # старые document_chunks удаляются,
-        # а новые создаются заново.
+        await add_processing_log(
+            db=db,
+            source_file_id=source_file_id,
+            publication_id=publication.id,
+            step_name="chunks_created",
+            status="success",
+            message=f"{len(chunk_payloads)} chunks created",
+        )
+
         chunk_texts = [chunk.chunk_text for chunk in chunk_payloads]
 
         embeddings = await asyncio.to_thread(
@@ -570,17 +564,6 @@ async def process_pdf_file(
         )
 
         if len(embeddings) != len(chunk_payloads):
-            source_file.processing_status = "error"
-
-            await add_processing_log(
-                db=db,
-                source_file_id=source_file_id,
-                step_name="embedding",
-                status="error",
-                error_message="Embedding count does not match chunk count",
-            )
-
-            await db.commit()
             raise ValueError("Embedding count does not match chunk count")
 
         embedded_at = datetime.now(timezone.utc)
@@ -607,15 +590,17 @@ async def process_pdf_file(
         db.add_all(new_chunks)
         await db.commit()
 
+        source_file.processing_status = "processed"
+        await db.commit()
+
         await add_processing_log(
             db=db,
             source_file_id=source_file_id,
-            step_name="chunking",
+            publication_id=publication.id,
+            step_name="processing_finished",
             status="success",
+            message="Processing completed successfully",
         )
-
-        source_file.processing_status = "processed"
-        await db.commit()
 
         return {
             "source_file_id": source_file_id,
@@ -631,12 +616,15 @@ async def process_pdf_file(
 
         if source_file is not None:
             source_file.processing_status = "error"
+            await db.commit()
 
         await add_processing_log(
             db=db,
             source_file_id=source_file_id,
-            step_name="processing",
+            publication_id=publication.id if publication is not None else None,
+            step_name="processing_failed",
             status="error",
+            message="PDF processing failed",
             error_message=str(exc),
         )
 

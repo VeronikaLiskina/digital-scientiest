@@ -151,3 +151,75 @@ def test_extracts_latin_full_names_with_affiliation_numbers():
         "Andrey Jakovlev",
         "Aleksey Ivanov",
     ]
+
+
+def test_does_not_extract_affiliation_name_in_university_phrase():
+    pages = [
+        PageText(
+            number=0,
+            text=(
+                "СВИДЕТЕЛЬСТВА КРАТКИХ ИНТЕНСИВНЫХ ПИКОВ\n"
+                "МАГМАТИЧЕСКОЙ АКТИВНОСТИ НА ЮГЕ СИБИРСКОЙ ПЛАТФОРМЫ\n"
+                "© 2013 г. А. В. Латышев1,2, Р. В. Веселовский1,2, А. В. Иванов3,\n"
+                "А. М. Фетисова1, В. Э. Павлов2\n"
+                "Московский государственный университет имени М.В. Ломоносова, геологический факультет, г. Москва\n"
+                "Поступила в редакцию 13.03.2013 г."
+            ),
+            lines=[
+                "СВИДЕТЕЛЬСТВА КРАТКИХ ИНТЕНСИВНЫХ ПИКОВ",
+                "МАГМАТИЧЕСКОЙ АКТИВНОСТИ НА ЮГЕ СИБИРСКОЙ ПЛАТФОРМЫ",
+                "© 2013 г. А. В. Латышев1,2, Р. В. Веселовский1,2, А. В. Иванов3,",
+                "А. М. Фетисова1, В. Э. Павлов2",
+                "Московский государственный университет имени М.В. Ломоносова, геологический факультет, г. Москва",
+                "Поступила в редакцию 13.03.2013 г.",
+            ],
+        )
+    ]
+
+    authors = _extract_authors(
+        pages,
+        title_match=TitleMatch(
+            title="СВИДЕТЕЛЬСТВА КРАТКИХ ИНТЕНСИВНЫХ ПИКОВ МАГМАТИЧЕСКОЙ АКТИВНОСТИ...",
+            page_index=0,
+            line_index=0,
+            score=9,
+        ),
+        kind="generic_article",
+    )
+
+    assert "М.В. Ломоносова" not in authors
+
+
+def test_falls_back_to_first_page_when_title_zone_has_no_authors():
+    pages = [
+        PageText(
+            number=0,
+            text=(
+                "The title of the paper\n"
+                "Abstract\n"
+                "This paper studies the topic.\n"
+                "A. B. Ivanov, C. D. Petrov\n"
+                "Institute of Earth Sciences"
+            ),
+            lines=[
+                "The title of the paper",
+                "Abstract",
+                "This paper studies the topic.",
+                "A. B. Ivanov, C. D. Petrov",
+                "Institute of Earth Sciences",
+            ],
+        )
+    ]
+
+    authors = _extract_authors(
+        pages,
+        title_match=TitleMatch(
+            title="The title of the paper",
+            page_index=0,
+            line_index=0,
+            score=9,
+        ),
+        kind="generic_article",
+    )
+
+    assert authors == ["Ivanov А.В.", "Petrov С.Д."]

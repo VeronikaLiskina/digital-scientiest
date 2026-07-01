@@ -19,9 +19,15 @@ class ProcessingLog(Base):
         nullable=False,
         index=True,
     )
+    publication_id: Mapped[int | None] = mapped_column(
+        ForeignKey("publications.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     step_name: Mapped[str] = mapped_column(String(100), nullable=False)
     status: Mapped[str] = mapped_column(String(50), nullable=False)
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[str] = mapped_column(

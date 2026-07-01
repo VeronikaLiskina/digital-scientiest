@@ -24,7 +24,13 @@ async def create_author(
     )
     await db.commit()
     await db.refresh(author)
-    return author
+
+    response_name = format_author_display_name(author.full_name) or author.full_name
+    return AuthorRead(
+        id=author.id,
+        full_name=response_name,
+        organization=author.organization,
+    )
 
 
 @router.get("", response_model=list[AuthorRead])
