@@ -1,35 +1,21 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
-  semanticSearchApi,
-  type SemanticSearchResult,
-} from "../../api/semanticSearchApi";
+  assistantApi,
+  type AssistantAskResponse,
+} from "../../api/assistantApi";
 
 function formatSimilarity(value: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function buildSummary(results: SemanticSearchResult[]) {
-  if (results.length === 0) {
-    return "По базе публикаций не найдено достаточно близких фрагментов.";
-  }
-
-  const publicationCount = new Set(
-    results.map((result) => result.publication_id),
-  ).size;
-
-  return `Найдено ${results.length} релевантных фрагментов в ${publicationCount} публикациях. Ниже показаны наиболее близкие совпадения и источники.`;
-}
-
 export function ReaderAssistantPage() {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<SemanticSearchResult[]>([]);
+  const [response, setResponse] = useState<AssistantAskResponse | null>(null);
   const [submittedQuery, setSubmittedQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const answer = useMemo(() => buildSummary(results), [results]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -45,21 +31,21 @@ export function ReaderAssistantPage() {
     setError(null);
 
     try {
-      const response = await semanticSearchApi.search({
-        query: normalizedQuery,
+      const assistantResponse = await assistantApi.ask({
+        question: normalizedQuery,
         limit: 10,
-        minSimilarity: 0.55,
+        min_similarity: 0.55,
       });
 
-      setSubmittedQuery(response.query);
-      setResults(response.results);
+      setSubmittedQuery(assistantResponse.question);
+      setResponse(assistantResponse);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : "Не удалось выполнить семантический поиск.",
+          : "Не удалось получить ответ ассистента.",
       );
-      setResults([]);
+      setResponse(null);
       setSubmittedQuery(normalizedQuery);
     } finally {
       setIsLoading(false);
@@ -88,7 +74,7 @@ export function ReaderAssistantPage() {
 
         <div className="reader-assistant__actions">
           <button className="button" type="submit" disabled={isLoading}>
-            {isLoading ? "Идет поиск..." : "Задать вопрос"}
+            {isLoading ? "Ассистент думает..." : "Задать вопрос"}
           </button>
 
           {submittedQuery && (
@@ -101,39 +87,52 @@ export function ReaderAssistantPage() {
         {error && <p className="message message--error">{error}</p>}
 
         <div className="reader-assistant__answer">
-          {submittedQuery ? (
+          {response ? (
             <>
-              <p>{answer}</p>
+              {response.answer.trim() && <p>{response.answer}</p>}
 
-              {results.length > 0 && (
+              {response.sources.length > 0 && (
                 <div className="reader-assistant__results">
-                  {results.map((result) => (
+                  {response.sources.map((source) => (
                     <article
                       className="reader-assistant__result"
-                      key={result.chunk_id}
+                      key={source.chunk_id}
                     >
                       <div className="reader-assistant__result-header">
                         <Link
-                          to={`/publications/${result.publication_id}`}
+                          to={`/publications/${source.publication_id}`}
                           className="reader-assistant__source"
                         >
-                          {result.publication_title}
+                          {source.publication_title ??
+                            `Публикация #${source.publication_id}`}
                         </Link>
 
                         <span>
-                          Сходство {formatSimilarity(result.similarity)}
+                          Сходство {formatSimilarity(source.similarity)}
                         </span>
                       </div>
 
-                      <p>{result.text}</p>
+                      <p>
+                        {source.text ??
+                          `Фрагмент #${source.chunk_id}${
+                            source.chunk_index !== null &&
+                            source.chunk_index !== undefined
+                              ? `, индекс ${source.chunk_index}`
+                              : ""
+                          }`}
+                      </p>
                     </article>
                   ))}
                 </div>
               )}
             </>
+          ) : submittedQuery ? (
+            <p className="empty">
+              Ответ не получен. Проверьте текст ошибки выше и попробуйте еще раз.
+            </p>
           ) : (
             <p className="empty">
-              Ответ появится здесь после поиска по публикациям.
+              Ответ появится здесь после вопроса по публикациям.
             </p>
           )}
         </div>

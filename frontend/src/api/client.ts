@@ -1,13 +1,18 @@
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+export const API_ROOT_URL = API_BASE_URL.replace(/\/api\/?$/, "");
 
 type RequestOptions = RequestInit & {
   isFormData?: boolean;
 };
 
-async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestOptions = {},
+  baseUrl = API_BASE_URL,
+): Promise<T> {
   const { isFormData, headers, ...rest } = options;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
+  const response = await fetch(`${baseUrl}${path}`, {
     ...rest,
     headers: isFormData
       ? headers
@@ -64,4 +69,17 @@ export const apiClient = {
       body,
       isFormData: true,
     }),
+};
+
+export const rootApiClient = {
+  get: <T>(path: string) => request<T>(path, {}, API_ROOT_URL),
+  post: <T>(path: string, body: unknown) =>
+    request<T>(
+      path,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+      },
+      API_ROOT_URL,
+    ),
 };
