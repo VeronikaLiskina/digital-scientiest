@@ -31,6 +31,17 @@ export function ReaderHomePage() {
           </div>
           <span className="reader-action-card__button">Открыть</span>
         </Link>
+
+        <Link className="reader-action-card card" to="/semantic-search">
+          <div className="reader-action-card__content">
+            <h2>Семантический поиск</h2>
+            <p>
+              Найдите фрагменты публикаций по смыслу запроса без генерации
+              ответа ассистента.
+            </p>
+          </div>
+          <span className="reader-action-card__button">Найти</span>
+        </Link>
       </div>
     </section>
   );

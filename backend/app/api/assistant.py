@@ -9,7 +9,12 @@ from app.repositories.semantic_search_repository import SemanticSearchRepository
 from app.schemas.assistant import AssistantAskRequest, AssistantAskResponse
 from app.services.embedding_service import EmbeddingService
 from app.services.local_llm_service import LocalLLMService
-from app.services.prompt_builder import build_rag_context, build_rag_prompt
+from app.services.prompt_builder import (
+    build_general_fallback_prompt,
+    build_rag_context,
+    build_rag_prompt,
+)
+from app.services.source_relevance import select_answer_sources
 
 
 router = APIRouter(prefix="/assistant", tags=["Assistant"])
@@ -27,29 +32,37 @@ async def ask_assistant(
     )
 
     repository = SemanticSearchRepository(db)
+    candidate_limit = min(max(data.limit * 3, 15), 30)
 
-    chunks = await repository.search_chunks(
+    candidate_chunks = await repository.search_chunks(
         query_embedding=query_embedding,
-        limit=data.limit,
+        limit=candidate_limit,
         min_similarity=data.min_similarity,
     )
+    chunks = select_answer_sources(
+        question=data.question,
+        chunks=candidate_chunks,
+        limit=data.limit,
+    )
+
+    llm_service = LocalLLMService()
 
     if not chunks:
+        prompt = build_general_fallback_prompt(data.question)
+        answer = await llm_service.generate_answer(
+            prompt,
+            allow_general_knowledge=True,
+        )
+
         return {
             "question": data.question,
-            "answer": "В базе публикаций не найдено достаточно релевантных фрагментов для ответа на этот вопрос.",
+            "answer": answer,
             "sources": [],
         }
 
     context = build_rag_context(chunks)
     prompt = build_rag_prompt(data.question, context)
-
-    llm_service = LocalLLMService()
-
-    answer = await llm_service.generate_answer(
-        question=data.question,
-        context=prompt,
-    )
+    answer = await llm_service.generate_answer(prompt)
 
     sources = [
         {

@@ -111,6 +111,11 @@ def test_author_normalization_variants_share_canonical_format():
     assert format_author_display_name("Alexei Ivanov") == "Alexei Ivanov"
 
 
+def test_author_normalization_handles_initials_without_dots():
+    assert format_author_display_name("Smith A B") == "Smith А.Б."
+    assert format_author_display_name("A B Smith") == "Smith А.Б."
+
+
 def test_extracts_latin_full_names_with_affiliation_numbers():
     pages = [
         PageText(

@@ -12,7 +12,7 @@ class AssistantSource(BaseModel):
     publication_title: str | None = None
     chunk_id: int
     chunk_index: int | None = None
-    text: str | None = None
+    text: str 
     similarity: float
 
 

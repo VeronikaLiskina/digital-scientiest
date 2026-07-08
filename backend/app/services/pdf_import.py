@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.source_file import SourceFile
+from app.services.ai_publication_analysis_service import analyze_publication_text
 from app.utils.file_hash import calculate_file_hash
 
 try:
@@ -1247,6 +1248,7 @@ def _extract_title(
 
     return best_match
 
+
 def _normalize_author_source(value: str) -> str:
     value = value.replace("\u00a0", " ")
     value = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", value)
@@ -1418,17 +1420,12 @@ def _looks_like_title_or_topic_phrase(value: str) -> bool:
     return any(marker in low for marker in title_markers)
 
 
-def format_author_display_name(raw_name: str) -> str | None:
-    """
-    Приводит автора к виду Иванов А.В.
+AUTHOR_INITIAL_RE = r"A-Z\u0410-\u042F\u0401"
+AUTHOR_NAME_RE = r"A-Za-z\u0410-\u044F\u0401\u0451'\-\u2019"
+RU_AUTHOR_WORD_RE = r"[\u0410-\u042F\u0401][\u0430-\u044F\u0451-]+"
 
-    Важно: имена не угадываем.
-    Alexei V. Ivanov -> Иванов А.В. только потому, что в строке уже есть A. и V.
-    A. V. Ivanov -> Иванов А.В.
-    Ivanov A. V. -> Иванов А.В.
-    Иванов Алексей Викторович -> Иванов А.В.
-    """
 
+def _format_author_display_name_impl(raw_name: str) -> str | None:
     cleaned = _normalize_author_source(raw_name)
 
     if (
@@ -1444,52 +1441,65 @@ def format_author_display_name(raw_name: str) -> str | None:
     if alias_key in AUTHOR_ALIASES:
         return AUTHOR_ALIASES[alias_key]
 
-    # Иванов Алексей Викторович / Иванов Алексей В.
     match = re.fullmatch(
-        r"([А-ЯЁ][а-яё-]+)\s+([А-ЯЁ][а-яё-]+)(?:\s+([А-ЯЁ][а-яё-]+|[А-ЯЁ]\.?))?",
+        rf"({RU_AUTHOR_WORD_RE})\s+({RU_AUTHOR_WORD_RE})(?:\s+({RU_AUTHOR_WORD_RE}|[{AUTHOR_INITIAL_RE}]\.?))?",
         cleaned,
     )
     if match:
         last_name, first_name, patronymic = match.groups()
         return _format_author_canonical(last_name, first_name, patronymic)
 
-    # А. В. Иванов / A. V. Ivanov
     match = re.fullmatch(
-        r"([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+)",
+        rf"([{AUTHOR_INITIAL_RE}])\.?\s*([{AUTHOR_INITIAL_RE}])\.?\s+([{AUTHOR_INITIAL_RE}][{AUTHOR_NAME_RE}]+)",
         cleaned,
     )
     if match:
         first_initial, second_initial, last_name = match.groups()
         return _format_author_canonical(last_name, first_initial, second_initial)
 
-    # Иванов А. В. / Ivanov A. V.
     match = re.fullmatch(
-        r"([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+)\s+([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ])\.?",
+        rf"([{AUTHOR_INITIAL_RE}])\.?\s+([{AUTHOR_INITIAL_RE}])\.?\s+([{AUTHOR_INITIAL_RE}][{AUTHOR_NAME_RE}]+)",
+        cleaned,
+    )
+    if match:
+        first_initial, second_initial, last_name = match.groups()
+        return _format_author_canonical(last_name, first_initial, second_initial)
+
+    match = re.fullmatch(
+        rf"([{AUTHOR_INITIAL_RE}][{AUTHOR_NAME_RE}]+)\s+([{AUTHOR_INITIAL_RE}])\.?\s*([{AUTHOR_INITIAL_RE}])\.?",
         cleaned,
     )
     if match:
         last_name, first_initial, second_initial = match.groups()
         return _format_author_canonical(last_name, first_initial, second_initial)
 
-    # Alexei V. Ivanov
     match = re.fullmatch(
-        r"([A-Z][a-zA-Z'’\-ÿ]+)\s+([A-Z])\.\s*([A-Z][a-zA-Z'’\-]+)",
+        r"([A-Z][a-zA-Z'\-\u2019]+)\s+([A-Z])\.\s*([A-Z][a-zA-Z'\-\u2019]+)",
         cleaned,
     )
     if match:
         first_name, middle_initial, last_name = match.groups()
         return _format_author_canonical(last_name, first_name, middle_initial)
 
-    # Alexei Ivanov — второго инициала нет, поэтому НЕ угадываем отчество.
-    # Такой вариант лучше не автозаполнять как автора, чем записать неполное ФИО.
-    if re.fullmatch(
-        r"[A-Z][a-zA-Z'’\-ÿ]+\s+[A-Z][a-zA-Z'’\-]+",
-        cleaned,
-    ):
+    if re.fullmatch(r"[A-Z][a-zA-Z'\-\u2019]+\s+[A-Z][a-zA-Z'\-\u2019]+", cleaned):
         return cleaned
 
-    # Если распарсить не смогли, не выдумываем.
     return None
+
+
+def format_author_display_name(raw_name: str) -> str | None:
+    """
+    Приводит автора к виду Иванов А.В.
+
+    Важно: имена не угадываем.
+    Alexei V. Ivanov -> Иванов А.В. только потому, что в строке уже есть A. и V.
+    A. V. Ivanov -> Иванов А.В.
+    Ivanov A. V. -> Иванов А.В.
+    Иванов Алексей Викторович -> Иванов А.В.
+    """
+
+    return _format_author_display_name_impl(raw_name)
+
 
 
 def _map_last_name(value: str) -> str:
@@ -1527,6 +1537,13 @@ def _find_author_candidates(text: str) -> list[str]:
         # Иванов Алексей Викторович
         r"[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+",
     ]
+
+    patterns.extend(
+        [
+            r"\b[A-Z\u0410-\u042F\u0401]\s+[A-Z\u0410-\u042F\u0401]\s+[A-Z\u0410-\u042F\u0401][A-Za-z\u0410-\u044F\u0401\u0451'\-\u2019]+\b",
+            r"\b[A-Z\u0410-\u042F\u0401][A-Za-z\u0410-\u044F\u0401\u0451'\-\u2019]+\s+[A-Z\u0410-\u042F\u0401]\s+[A-Z\u0410-\u042F\u0401]\b",
+        ]
+    )
 
     candidates: list[str] = []
     for pattern in patterns:
@@ -1739,15 +1756,19 @@ def _is_untrusted_author_line(line: str) -> bool:
     return False
 
 
-def _extract_authors_from_lines(lines: list[str]) -> list[str]:
+def _extract_authors_from_lines(
+    lines: list[str],
+    *,
+    max_lines: int | None = 8,
+) -> list[str]:
     cleaned_lines = [
         _clean_author_line(line)
         for line in lines
         if not _is_untrusted_author_line(line)
     ]
 
-    if len(cleaned_lines) > 8:
-        cleaned_lines = cleaned_lines[:8]
+    if max_lines is not None and len(cleaned_lines) > max_lines:
+        cleaned_lines = cleaned_lines[:max_lines]
 
     text = ", ".join(line for line in cleaned_lines if line)
     return _normalize_author_list(_find_author_candidates(text))
@@ -1898,9 +1919,6 @@ def _extract_authors_from_first_pages(pages: list[PageText]) -> list[str]:
         for line in first_lines
         if not _is_untrusted_author_line(line)
     ]
-
-    if len(cleaned_lines) > 8:
-        cleaned_lines = cleaned_lines[:8]
 
     text = ", ".join(line for line in cleaned_lines if line)
     return _normalize_author_list(
@@ -2765,10 +2783,211 @@ def _extract_keywords(text: str) -> list[str]:
     return keywords[:12]
 
 
+def _merge_unique_values(*groups: list[str], limit: int | None = None) -> list[str]:
+    result: list[str] = []
+    seen: set[str] = set()
+
+    for group in groups:
+        for value in group:
+            value = _clean_metadata_line(str(value))
+
+            if not value:
+                continue
+
+            key = value.lower().replace("\u0451", "\u0435")
+
+            if key in seen:
+                continue
+
+            seen.add(key)
+            result.append(value)
+
+            if limit is not None and len(result) >= limit:
+                return result
+
+    return result
+
+
+def _normalize_ai_authors(authors: list[str]) -> list[str]:
+    result: list[str] = []
+
+    for author in authors:
+        normalized_authors = _extract_authors_from_lines([author])
+
+        if normalized_authors:
+            result.extend(normalized_authors)
+            continue
+
+        normalized = format_author_display_name(author)
+
+        if normalized is not None:
+            result.append(normalized)
+
+    return _merge_unique_values(result)
+
+
+def _normalize_ai_keywords(
+    keywords: list[str],
+    *,
+    language: str | None,
+) -> list[str]:
+    formatted: list[str] = []
+
+    for keyword in keywords:
+        keyword = _clean_metadata_line(keyword)
+
+        if not keyword:
+            continue
+
+        if len(keyword) > 90 or len(keyword.split()) > 6:
+            continue
+
+        if _is_bad_formatted_phrase(keyword):
+            continue
+
+        formatted.append(_format_phrase(keyword, language=language))
+
+    return _dedupe_phrases(formatted)
+
+
+def _ai_field_confidence(analysis, field_name: str, default: float = 0.0) -> float:
+    metadata = analysis.field_metadata.get(field_name)
+
+    if metadata is None or metadata.confidence is None:
+        return default
+
+    return metadata.confidence
+
+
+def _ai_provenance(analysis) -> tuple[dict[str, float], dict[str, str], dict[str, int]]:
+    confidence: dict[str, float] = {}
+    evidence: dict[str, str] = {}
+    pages: dict[str, int] = {}
+
+    for field_name, metadata in analysis.field_metadata.items():
+        if metadata.confidence is not None:
+            confidence[field_name] = metadata.confidence
+
+        if metadata.evidence:
+            evidence[field_name] = metadata.evidence
+
+        if metadata.page is not None:
+            pages[field_name] = metadata.page
+
+    return confidence, evidence, pages
+
+
+def _merge_ai_list_if_confident(
+    current_values: list[str],
+    ai_values: list[str],
+    *,
+    confidence: float,
+    prefer_ai_threshold: float,
+    limit: int | None = None,
+) -> list[str]:
+    if confidence >= prefer_ai_threshold:
+        return _merge_unique_values(ai_values, current_values, limit=limit)
+
+    return _merge_unique_values(current_values, ai_values, limit=limit)
+
+
+def _merge_ai_publication_analysis(
+    extracted: ExtractedPublicationMetadata,
+    *,
+    full_text: str,
+    filename_title: str | None,
+    original_filename: str | None = None,
+) -> ExtractedPublicationMetadata:
+    analysis_text = _extract_meaningful_metadata_text(full_text, limit=16000)
+    analysis = analyze_publication_text(
+        analysis_text,
+        filename=original_filename,
+    )
+
+    if analysis is None:
+        return extracted
+
+    title = extracted.title
+    title_source = extracted.title_source
+    title_confidence = extracted.title_confidence
+    title_warning = extracted.title_warning
+    ai_title = _clean_metadata_line(analysis.title or "")
+
+    if (
+        ai_title
+        and not _is_bad_extracted_title(ai_title)
+        and _ai_field_confidence(analysis, "title", default=0.8) >= 0.65
+        and (
+            not title
+            or title_confidence == "low"
+            or title_source == "filename"
+        )
+    ):
+        title = ai_title
+        title_source = "ai"
+        title_confidence = "medium"
+        title_warning = None
+
+    year = extracted.year
+
+    if year is None and _ai_field_confidence(analysis, "year", default=0.8) >= 0.6:
+        year = analysis.year
+
+    doi = extracted.doi
+
+    if doi is None and _ai_field_confidence(analysis, "doi", default=0.8) >= 0.7:
+        doi = analysis.doi
+
+    language = extracted.language or _detect_language(
+        full_text,
+        ai_title or filename_title,
+    )
+
+    ai_authors = _normalize_ai_authors(analysis.authors)
+    authors = _merge_ai_list_if_confident(
+        extracted.authors,
+        ai_authors,
+        confidence=_ai_field_confidence(analysis, "authors", default=0.8),
+        prefer_ai_threshold=0.75,
+    )
+
+    ai_keywords = _normalize_ai_keywords(analysis.keywords, language=language)
+    keywords = _merge_ai_list_if_confident(
+        extracted.keywords,
+        ai_keywords,
+        confidence=_ai_field_confidence(analysis, "keywords", default=0.8),
+        prefer_ai_threshold=0.7,
+        limit=12,
+    )
+    keywords = _filter_author_phrases(keywords, authors)
+
+    topic_seed_title = title or filename_title
+    inferred_topics = _extract_topics_from_keywords(
+        title=topic_seed_title,
+        keywords=keywords,
+    )
+    topics = _merge_unique_values(inferred_topics, extracted.topics, limit=5)
+
+    return ExtractedPublicationMetadata(
+        title=title,
+        year=year,
+        language=language,
+        publication_type=extracted.publication_type,
+        doi=doi,
+        authors=authors,
+        keywords=keywords,
+        topics=topics,
+        title_source=title_source,
+        title_confidence=title_confidence,
+        title_warning=title_warning,
+    )
+
+
 def extract_publication_metadata_from_pdf(
-    file_path: Path,
+    file_path: Path | str,
     original_name: str | None = None,
 ) -> ExtractedPublicationMetadata:
+    file_path = Path(file_path)
     original_filename = original_name or file_path.name
     filename_title = _filename_title_candidate(original_filename)
     filename_title_quality = _filename_title_quality(
@@ -2785,7 +3004,7 @@ def extract_publication_metadata_from_pdf(
             filename_title=filename_title,
             filename_quality=filename_title_quality,
         )
-        return ExtractedPublicationMetadata(
+        extracted = ExtractedPublicationMetadata(
             title=title,
             year=None,
             language=None,
@@ -2798,6 +3017,7 @@ def extract_publication_metadata_from_pdf(
             title_confidence=title_confidence,
             title_warning=title_warning,
         )
+        return extracted
 
     kind = _detect_document_kind(full_text)
 
@@ -2849,7 +3069,7 @@ def extract_publication_metadata_from_pdf(
         keywords=keywords,
     )
 
-    return ExtractedPublicationMetadata(
+    extracted = ExtractedPublicationMetadata(
         title=title,
         year=_extract_year(full_text, filename_title),
         language=language,
@@ -2861,6 +3081,13 @@ def extract_publication_metadata_from_pdf(
         title_source=title_source,
         title_confidence=title_confidence,
         title_warning=title_warning,
+    )
+
+    return _merge_ai_publication_analysis(
+        extracted,
+        full_text=full_text,
+        filename_title=filename_title,
+        original_filename=original_filename,
     )
 
 

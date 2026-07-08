@@ -21,6 +21,7 @@ import { ReaderAssistantPage } from "./pages/reader/ReaderAssistantPage";
 import { ReaderHomePage } from "./pages/reader/ReaderHomePage";
 import { ReaderPublicationDetailsPage } from "./pages/reader/ReaderPublicationDetailsPage";
 import { ReaderPublicationsPage } from "./pages/reader/ReaderPublicationsPage";
+import { ReaderSemanticSearchPage } from "./pages/reader/ReaderSemanticSearchPage";
 
 import "./scss/main.scss";
 
@@ -35,6 +36,7 @@ const router = createBrowserRouter([
         path: "publications/:publicationId",
         element: <ReaderPublicationDetailsPage />,
       },
+      { path: "semantic-search", element: <ReaderSemanticSearchPage /> },
       { path: "assistant", element: <ReaderAssistantPage /> },
     ],
   },
