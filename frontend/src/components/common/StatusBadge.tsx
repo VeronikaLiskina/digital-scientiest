@@ -7,6 +7,7 @@ const statusLabels: Record<string, string> = {
   new: "Новый",
   processed: "Обработан",
   processing: "В обработке",
+  queued: "В очереди",
   success: "Успешно",
   error: "Ошибка",
   review: "На проверке",

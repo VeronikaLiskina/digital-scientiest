@@ -71,3 +71,28 @@
     font-weight: 600;
   }
 }
+
+.publication-import-page__processing-row {
+  background: rgba(47, 92, 255, 0.055);
+}
+
+.publication-import-page__processing-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+
+  > span:first-child:not(.status) {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #2f5cff;
+    box-shadow: 0 0 0 rgba(47, 92, 255, 0.35);
+    animation: publication-processing-pulse 1.4s infinite;
+  }
+}
+
+@keyframes publication-processing-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 92, 255, 0.35); }
+  70% { box-shadow: 0 0 0 7px rgba(47, 92, 255, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 92, 255, 0); }
+}

@@ -80,10 +80,32 @@ export function PublicationBulkImportPage() {
       return;
     }
 
-    publicationImportsApi
-      .getBatch(Number(batchId))
-      .then(setBatch)
-      .catch(() => setError("Не удалось загрузить партию импорта"));
+    let cancelled = false;
+    let refreshTimer: number | undefined;
+
+    async function refreshBatch() {
+      try {
+        const nextBatch = await publicationImportsApi.getBatch(Number(batchId));
+        if (cancelled) return;
+
+        setBatch(nextBatch);
+        const hasActiveProcessing = nextBatch.items.some(
+          (item) => item.processing_status === "queued" || item.processing_status === "processing",
+        );
+        if (hasActiveProcessing) {
+          refreshTimer = window.setTimeout(refreshBatch, 2000);
+        }
+      } catch {
+        if (!cancelled) setError("Не удалось загрузить партию импорта");
+      }
+    }
+
+    void refreshBatch();
+
+    return () => {
+      cancelled = true;
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+    };
   }, [batchId]);
 
   function handleFilesChange(files: FileList | null) {
@@ -185,18 +207,33 @@ export function PublicationBulkImportPage() {
                   <th>Название</th>
                   <th>Авторы</th>
                   <th>Статус</th>
+                  <th>Обработка PDF</th>
                   <th>Предупреждение</th>
                   <th>Действие</th>
                 </tr>
               </thead>
               <tbody>
-                {batch.items.map((item) => (
-                  <tr key={item.id}>
+                {batch.items.map((item) => {
+                  const isPdfProcessing =
+                    item.processing_status === "queued" || item.processing_status === "processing";
+
+                  return (
+                  <tr className={isPdfProcessing ? "publication-import-page__processing-row" : undefined} key={item.id}>
                     <td>{item.original_file_name}</td>
                     <td>{item.title ?? item.extracted_metadata?.title ?? "—"}</td>
                     <td>{itemAuthors(item)}</td>
                     <td>
                       <StatusBadge value={item.status} />
+                    </td>
+                    <td>
+                      {item.publication_id && item.processing_status ? (
+                        <div className="publication-import-page__processing-status">
+                          {isPdfProcessing && <span aria-hidden="true" />}
+                          <StatusBadge value={item.processing_status} />
+                        </div>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
                     </td>
                     <td>{itemWarning(item)}</td>
                     <td>
@@ -216,7 +253,8 @@ export function PublicationBulkImportPage() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

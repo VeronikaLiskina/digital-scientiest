@@ -78,6 +78,8 @@ async def test_process_pdf_file_saves_embeddings_and_cleans_chunk_text(
                 )
             )
         ).scalars().all()
+        await session.refresh(publication)
+        publication_status = publication.status
 
     assert result["chunks_created"] == 1
     assert len(chunks) == 1
@@ -85,6 +87,7 @@ async def test_process_pdf_file_saves_embeddings_and_cleans_chunk_text(
     assert chunks[0].embedding is not None
     assert chunks[0].embedding_model == "fake-embedding-model"
     assert chunks[0].embedded_at is not None
+    assert publication_status == "processed"
 
 
 @pytest.mark.asyncio
@@ -243,6 +246,8 @@ async def test_process_pdf_file_logs_processing_failure(monkeypatch, tmp_path):
 
         updated_source_file = await session.get(SourceFile, source_file.id)
         assert updated_source_file.processing_status == "error"
+        await session.refresh(publication)
+        assert publication.status == "review"
 
         logs = (
             await session.execute(

@@ -220,6 +220,7 @@ class AIPublicationAnalysisService:
         self.base_url = settings.ollama_base_url.rstrip("/")
         self.model = settings.ollama_model
         self.timeout = settings.ai_publication_analysis_timeout_seconds
+        self.keep_alive = settings.ollama_keep_alive
 
     def analyze_text(
         self,
@@ -252,6 +253,7 @@ class AIPublicationAnalysisService:
         payload = {
             "model": self.model,
             "stream": False,
+            "keep_alive": self.keep_alive,
             "format": "json",
             "messages": [
                 {

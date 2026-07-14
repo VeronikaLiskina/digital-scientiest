@@ -1,5 +1,7 @@
 import pytest
 
+from app.core.config import settings
+
 
 @pytest.mark.asyncio
 async def test_create_source_file(client):
@@ -115,3 +117,32 @@ async def test_delete_source_file(client):
     get_response = await client.get(f"/api/source-files/{source_file_id}")
 
     assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_source_file_removes_managed_pdf(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    pdf_path = tmp_path / "source-file-cleanup.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 source file cleanup test")
+
+    create_response = await client.post(
+        "/api/source-files",
+        json={
+            "file_name": pdf_path.name,
+            "file_path": str(pdf_path),
+            "file_type": "application/pdf",
+            "processing_status": "new",
+        },
+    )
+    assert create_response.status_code == 201
+
+    delete_response = await client.delete(
+        f"/api/source-files/{create_response.json()['id']}"
+    )
+
+    assert delete_response.status_code == 204
+    assert not pdf_path.exists()

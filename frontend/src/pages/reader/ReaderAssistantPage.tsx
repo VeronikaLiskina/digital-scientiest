@@ -1,273 +1,265 @@
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 
 import {
   assistantApi,
-  type AssistantAskResponse,
   type AssistantSource,
+  type ChatDetail,
+  type ChatMessage,
+  type ChatSummary,
 } from "../../api/assistantApi";
 
-const EXAMPLE_QUESTIONS = [
-  "Какие публикации есть по магматизму?",
-];
-
-function formatSimilarity(value: number) {
-  return `${Math.round(value * 100)}%`;
+function sourceLink(source: AssistantSource) {
+  return `/publications/${source.publication_id}`;
 }
 
-function formatChunkMeta(source: AssistantSource) {
-  if (source.chunk_index === null || source.chunk_index === undefined) {
-    return `Фрагмент #${source.chunk_id}`;
-  }
+function rankedPublicationSources(sources: AssistantSource[]) {
+  const bestByPublication = new Map<number, AssistantSource>();
 
-  return `Фрагмент #${source.chunk_id}, индекс ${source.chunk_index}`;
-}
-
-function getSourceText(source: AssistantSource) {
-  return source.text?.trim() || formatChunkMeta(source);
-}
-
-function getSourceLink(source: AssistantSource) {
-  return {
-    pathname: `/publications/${source.publication_id}`,
-    search: `?source=assistant&chunk=${source.chunk_id}`,
-    hash: `#chunk-${source.chunk_id}`,
-  };
-}
-
-function normalizeErrorMessage(err: unknown) {
-  if (err instanceof Error && err.message.trim()) {
-    if (err.message.includes("500")) {
-      return "Ассистент сейчас не смог получить данные из базы. Проверьте подключение backend к PostgreSQL и попробуйте еще раз.";
+  sources.forEach((source) => {
+    const current = bestByPublication.get(source.publication_id);
+    if (!current || source.similarity > current.similarity) {
+      bestByPublication.set(source.publication_id, source);
     }
+  });
 
-    return err.message;
-  }
+  return Array.from(bestByPublication.values()).sort(
+    (left, right) => right.similarity - left.similarity,
+  );
+}
 
-  return "Не удалось получить ответ ассистента. Попробуйте еще раз.";
+function similarityPercent(similarity: number) {
+  return similarity.toLocaleString("ru-RU", {
+    style: "percent",
+    maximumFractionDigits: 1,
+  });
+}
+
+function errorText(error: unknown) {
+  return error instanceof Error && error.message
+    ? error.message
+    : "Не удалось выполнить запрос. Попробуйте ещё раз.";
 }
 
 export function ReaderAssistantPage() {
+  const [chats, setChats] = useState<ChatSummary[]>([]);
+  const [activeChat, setActiveChat] = useState<ChatDetail | null>(null);
   const [query, setQuery] = useState("");
-  const [response, setResponse] = useState<AssistantAskResponse | null>(null);
-  const [submittedQuery, setSubmittedQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const canSubmit = query.trim().length >= 2 && !isLoading;
-  const sourceCount = response?.sources.length ?? 0;
-  const answerText = response?.answer.trim();
+  useEffect(() => {
+    void loadChats();
+  }, []);
 
-  const topSources = useMemo(
-    () => response?.sources.slice(0, 3) ?? [],
-    [response],
-  );
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [activeChat?.messages, isLoading]);
 
-  function useExample(question: string) {
-    setQuery(question);
+  async function loadChats() {
+    try {
+      const items = await assistantApi.getChats();
+      setChats(items);
+      if (items.length > 0) {
+        await openChat(items[0].id);
+      }
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function openChat(chatId: number) {
     setError(null);
+    try {
+      setActiveChat(await assistantApi.getChat(chatId));
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function createChat() {
+    setError(null);
+    try {
+      const chat = await assistantApi.createChat();
+      setChats((current) => [chat, ...current]);
+      setActiveChat(chat);
+      setQuery("");
+    } catch (err) {
+      setError(errorText(err));
+    }
+  }
+
+  async function removeChat(chatId: number) {
+    try {
+      await assistantApi.deleteChat(chatId);
+      const remaining = chats.filter((chat) => chat.id !== chatId);
+      setChats(remaining);
+      if (activeChat?.id === chatId) {
+        if (remaining.length > 0) {
+          await openChat(remaining[0].id);
+        } else {
+          setActiveChat(null);
+        }
+      }
+    } catch (err) {
+      setError(errorText(err));
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-
-    const normalizedQuery = query.trim();
-
-    if (normalizedQuery.length < 2) {
-      setError("Введите запрос длиной не меньше двух символов.");
-      return;
-    }
+    const content = query.trim();
+    if (content.length < 2 || isLoading) return;
 
     setIsLoading(true);
     setError(null);
-    setSubmittedQuery(normalizedQuery);
+    setQuery("");
 
     try {
-      const assistantResponse = await assistantApi.ask({
-        question: normalizedQuery,
-        limit: 10,
-        min_similarity: 0.55,
-      });
+      let chat = activeChat;
+      if (!chat) {
+        chat = await assistantApi.createChat();
+        setActiveChat(chat);
+      }
 
-      setSubmittedQuery(assistantResponse.question);
-      setResponse(assistantResponse);
+      const temporaryMessage: ChatMessage = {
+        id: -Date.now(),
+        chat_id: chat.id,
+        role: "user",
+        content,
+        sources: [],
+        created_at: new Date().toISOString(),
+      };
+      setActiveChat({ ...chat, messages: [...chat.messages, temporaryMessage] });
+
+      const reply = await assistantApi.sendMessage(chat.id, content);
+      const updated: ChatDetail = {
+        ...reply.chat,
+        messages: [
+          ...chat.messages,
+          reply.user_message,
+          reply.assistant_message,
+        ],
+      };
+      setActiveChat(updated);
+      setChats((current) => [
+        reply.chat,
+        ...current.filter((item) => item.id !== reply.chat.id),
+      ]);
     } catch (err) {
-      setError(normalizeErrorMessage(err));
-      setResponse(null);
+      setError(errorText(err));
+      if (activeChat) await openChat(activeChat.id);
     } finally {
       setIsLoading(false);
     }
   }
 
+  function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key === "Enter" && !event.shiftKey) {
+      event.preventDefault();
+      event.currentTarget.form?.requestSubmit();
+    }
+  }
+
   return (
-    <section className="reader-assistant-page">
+    <section className="reader-assistant-page chat-page">
       <div className="page-header">
         <div>
-          <h1>Ассистент по материалам</h1>
-          <p>
-            Задайте вопрос по базе публикаций и получите ответ с релевантными
-            источниками для быстрой проверки.
-          </p>
+          <h1>ИИ-ассистент</h1>
+          <p>Задавайте уточняющие вопросы и возвращайтесь к прошлым диалогам.</p>
         </div>
       </div>
 
-      <form className="card reader-assistant" onSubmit={handleSubmit}>
-        <div className="reader-assistant__composer">
-          <label className="reader-assistant__label" htmlFor="assistant-query">
-            Вопрос
-          </label>
-
-          <textarea
-            id="assistant-query"
-            className="reader-assistant__textarea"
-            placeholder="Например: какие публикации есть по магматизму?"
-            value={query}
-            onChange={(event) => {
-              setQuery(event.target.value);
-              setError(null);
-            }}
-          />
-
-          <div className="reader-assistant__examples" aria-label="Примеры запросов">
-            {EXAMPLE_QUESTIONS.map((question) => (
-              <button
-                className="reader-assistant__example"
-                type="button"
-                key={question}
-                onClick={() => useExample(question)}
-              >
-                {question}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="reader-assistant__actions">
-          <button className="button" type="submit" disabled={!canSubmit}>
-            {isLoading ? "Готовлю ответ..." : "Задать вопрос"}
+      <div className="chat-layout">
+        <aside className="card chat-sidebar">
+          <button className="button chat-sidebar__new" type="button" onClick={createChat}>
+            + Новый чат
           </button>
-
-          {submittedQuery && (
-            <span className="reader-assistant__query">
-              Последний запрос: {submittedQuery}
-            </span>
-          )}
-        </div>
-
-        {error && (
-          <div className="message message--error reader-assistant__error" role="alert">
-            <strong>Ответ не получен.</strong>
-            <span>{error}</span>
+          <div className="chat-sidebar__list">
+            {chats.map((chat) => (
+              <div
+                className={`chat-sidebar__item ${activeChat?.id === chat.id ? "is-active" : ""}`}
+                key={chat.id}
+              >
+                <button type="button" onClick={() => openChat(chat.id)}>
+                  <strong>{chat.title}</strong>
+                  <span>{new Date(chat.updated_at).toLocaleDateString("ru-RU")}</span>
+                </button>
+                <button
+                  className="chat-sidebar__delete"
+                  type="button"
+                  aria-label="Удалить чат"
+                  onClick={() => removeChat(chat.id)}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            {chats.length === 0 && <p className="empty">История пока пуста</p>}
           </div>
-        )}
+        </aside>
 
-        <div className="reader-assistant__answer" aria-live="polite">
-          {isLoading ? (
-            <div className="reader-assistant__loading">
-              <span className="reader-assistant__spinner" aria-hidden="true" />
-              <div>
-                <strong>Ищу фрагменты и формирую ответ</strong>
-                <p>
-                  Обычно это занимает немного времени: ассистент сначала ищет
-                  источники, затем собирает ответ по найденному контексту.
-                </p>
+        <div className="card chat-window">
+          <div className="chat-messages" aria-live="polite">
+            {!activeChat || activeChat.messages.length === 0 ? (
+              <div className="chat-welcome">
+                <strong>Начните новый диалог</strong>
+                <p>Например: «Какие публикации есть по магматизму?»</p>
               </div>
-            </div>
-          ) : response ? (
-            <div className="reader-assistant__response">
-              <div className="reader-assistant__answer-header">
-                <div>
-                  <span className="reader-assistant__eyebrow">Ответ</span>
-                  <h2>По вашему вопросу</h2>
-                </div>
-                <span className="reader-assistant__source-count">
-                  {sourceCount} источников
-                </span>
-              </div>
-
-              {answerText ? (
-                <p className="reader-assistant__answer-text">{answerText}</p>
-              ) : (
-                <p className="empty">
-                  Ассистент вернул источники, но не сформировал текст ответа.
-                </p>
-              )}
-
-              {topSources.length > 0 && (
-                <div className="reader-assistant__source-strip">
-                  {topSources.map((source) => (
-                    <Link
-                      to={getSourceLink(source)}
-                      className="reader-assistant__source-chip"
-                      key={source.chunk_id}
-                    >
-                      {source.publication_title ||
-                        `Публикация #${source.publication_id}`}
-                    </Link>
-                  ))}
-                </div>
-              )}
-
-              {response.sources.length > 0 ? (
-                <div className="reader-assistant__results">
-                  {response.sources.map((source) => (
-                    <article
-                      className="reader-assistant__result"
-                      key={source.chunk_id}
-                    >
-                      <div className="reader-assistant__result-header">
-                        <div>
-                          <Link
-                            to={getSourceLink(source)}
-                            className="reader-assistant__source"
-                          >
-                            {source.publication_title ||
-                              `Публикация #${source.publication_id}`}
-                          </Link>
-                          <span className="reader-assistant__meta">
-                            {formatChunkMeta(source)}
-                          </span>
-                        </div>
-
-                        <span className="reader-assistant__score">
-                          Сходство {formatSimilarity(source.similarity)}
-                        </span>
-                      </div>
-
-                      <p>{getSourceText(source)}</p>
-
-                      <div className="reader-assistant__result-actions">
+            ) : (
+              activeChat.messages.map((message) => (
+                <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+                  <span className="chat-message__role">
+                    {message.role === "user" ? "Вы" : "Ассистент"}
+                  </span>
+                  <p>{message.content}</p>
+                  {message.sources.length > 0 && (
+                    <div className="chat-message__sources">
+                      {rankedPublicationSources(message.sources).map((source) => (
                         <Link
-                          className="reader-assistant__fragment-link"
-                          to={getSourceLink(source)}
+                          to={sourceLink(source)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          key={source.publication_id}
                         >
-                          Открыть этот фрагмент
+                          {source.publication_title || `Публикация #${source.publication_id}`}
+                          <span className="chat-message__similarity">
+                            {similarityPercent(source.similarity)}
+                          </span>
                         </Link>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              ) : (
-                <p className="empty">
-                  В базе не найдено достаточно релевантных фрагментов для ответа.
-                </p>
-              )}
-            </div>
-          ) : submittedQuery ? (
-            <p className="empty">
-              Ответ не получен. Проверьте сообщение выше и повторите запрос.
-            </p>
-          ) : (
-            <div className="reader-assistant__empty">
-              <strong>Задайте вопрос, чтобы начать</strong>
-              <p>
-                Ответ появится здесь вместе со ссылками на публикации, на
-                которые опирался ассистент.
-              </p>
-            </div>
-          )}
+                      ))}
+                    </div>
+                  )}
+                </article>
+              ))
+            )}
+            {isLoading && (
+              <div className="chat-message chat-message--assistant chat-message--loading">
+                <span className="reader-assistant__spinner" aria-hidden="true" />
+                <span>Ассистент готовит ответ…</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          {error && <div className="message message--error chat-error">{error}</div>}
+
+          <form className="chat-composer" onSubmit={handleSubmit}>
+            <textarea
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Введите сообщение…"
+              rows={2}
+              disabled={isLoading}
+            />
+            <button className="button" type="submit" disabled={query.trim().length < 2 || isLoading}>
+              Отправить
+            </button>
+          </form>
         </div>
-      </form>
+      </div>
     </section>
   );
 }

@@ -7,13 +7,13 @@ import re
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile
-from pypdf import PdfReader
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.models.source_file import SourceFile
 from app.services.ai_publication_analysis_service import analyze_publication_text
+from app.services.pdf_text_extraction import extract_pdf_pages
 from app.utils.file_hash import calculate_file_hash
 
 try:
@@ -475,17 +475,14 @@ def _extract_metadata_lines(text: str) -> list[str]:
 
 
 def _extract_pages(file_path: Path, max_pages: int = 15) -> list[PageText]:
-    reader = PdfReader(str(file_path))
     pages: list[PageText] = []
+    extraction = extract_pdf_pages(file_path, max_pages=max_pages)
 
-    for page_index, page in enumerate(reader.pages):
-        if page_index >= max_pages:
-            break
-
-        text = _clean_text(page.extract_text() or "")
+    for extracted_page in extraction.pages:
+        text = _clean_text(extracted_page.text)
         pages.append(
             PageText(
-                number=page_index,
+                number=extracted_page.index,
                 text=text,
                 lines=_extract_metadata_lines(text),
             )
@@ -2898,6 +2895,14 @@ def _merge_ai_publication_analysis(
     filename_title: str | None,
     original_filename: str | None = None,
 ) -> ExtractedPublicationMetadata:
+    analysis_mode = settings.ai_publication_analysis_mode.strip().lower()
+
+    if analysis_mode not in {"always", "fallback"}:
+        return extracted
+
+    if analysis_mode == "fallback" and not _needs_ai_publication_analysis(extracted):
+        return extracted
+
     analysis_text = _extract_meaningful_metadata_text(full_text, limit=16000)
     analysis = analyze_publication_text(
         analysis_text,
@@ -2980,6 +2985,24 @@ def _merge_ai_publication_analysis(
         title_source=title_source,
         title_confidence=title_confidence,
         title_warning=title_warning,
+    )
+
+
+def _needs_ai_publication_analysis(
+    extracted: ExtractedPublicationMetadata,
+) -> bool:
+    """Use the 7B model only when the lightweight parser needs help."""
+    title_needs_help = (
+        not extracted.title
+        or extracted.title_confidence == "low"
+        or extracted.title_source == "filename"
+    )
+
+    return (
+        title_needs_help
+        or extracted.year is None
+        or not extracted.authors
+        or not extracted.keywords
     )
 
 

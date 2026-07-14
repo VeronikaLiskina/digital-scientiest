@@ -8,6 +8,11 @@ export type ProcessPdfResult = {
   status: string;
 };
 
+export type StartPdfProcessingResult = {
+  source_file_id: number;
+  status: "queued" | "processing" | string;
+};
+
 export type CatalogMatch = {
   id: number;
   name: string;
@@ -74,6 +79,11 @@ export const sourceFilesApi = {
   process: (sourceFileId: number) =>
     apiClient.post<ProcessPdfResult>(
       `/source-files/${sourceFileId}/process`,
+      {},
+    ),
+  startProcessing: (sourceFileId: number) =>
+    apiClient.post<StartPdfProcessingResult>(
+      `/source-files/${sourceFileId}/process/start`,
       {},
     ),
   getDownloadUrl: (id: number) => `${API_BASE_URL}/source-files/${id}/download`,

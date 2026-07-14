@@ -72,6 +72,7 @@ MIN_DIRECT_TOKEN_COVERAGE = 0.25
 MIN_SHORT_QUERY_PARTIAL_SIMILARITY = 0.72
 MIN_LONG_QUERY_PARTIAL_SIMILARITY = 0.70
 HIGH_SEMANTIC_SIMILARITY = 0.78
+MIN_SEMANTIC_SUPPLEMENT_SIMILARITY = 0.70
 MIN_SHARED_PREFIX_LENGTH = 6
 MIN_SHARED_PREFIX_RATIO = 0.75
 
@@ -192,6 +193,42 @@ def filter_relevant_sources(
     return relevant_chunks[:limit]
 
 
+def diversify_chunks_by_publication(
+    chunks: list[dict],
+    limit: int,
+) -> list[dict]:
+    """Prefer one best-ranked chunk per publication, then fill spare slots."""
+    selected_indices: set[int] = set()
+    seen_publications: set[int] = set()
+    selected: list[dict] = []
+
+    for index, chunk in enumerate(chunks):
+        publication_id = chunk.get("publication_id")
+
+        # Chunks without publication metadata are treated as independent. This
+        # keeps the helper safe for diagnostics and older stored data.
+        if publication_id is not None and publication_id in seen_publications:
+            continue
+
+        selected.append(chunk)
+        selected_indices.add(index)
+        if publication_id is not None:
+            seen_publications.add(publication_id)
+
+        if len(selected) >= limit:
+            return selected
+
+    for index, chunk in enumerate(chunks):
+        if index in selected_indices:
+            continue
+
+        selected.append(chunk)
+        if len(selected) >= limit:
+            break
+
+    return selected
+
+
 def select_answer_sources(
     question: str,
     chunks: list[dict],
@@ -200,10 +237,19 @@ def select_answer_sources(
     relevant_chunks = filter_relevant_sources(
         question=question,
         chunks=chunks,
-        limit=limit,
+        limit=len(chunks),
     )
 
     if relevant_chunks:
-        return relevant_chunks
+        relevant_chunk_ids = {id(chunk) for chunk in relevant_chunks}
+        candidates = [
+            chunk
+            for chunk in chunks
+            if id(chunk) in relevant_chunk_ids
+            or float(chunk.get("similarity") or 0)
+            >= MIN_SEMANTIC_SUPPLEMENT_SIMILARITY
+        ]
+    else:
+        candidates = chunks
 
-    return chunks[:limit]
+    return diversify_chunks_by_publication(candidates, limit)

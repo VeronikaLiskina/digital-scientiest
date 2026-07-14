@@ -12,6 +12,7 @@ class ImportItemRead(BaseModel):
     publication_id: int | None = None
     original_file_name: str
     status: str
+    processing_status: str | None = None
     error_message: str | None = None
     extracted_metadata: ExtractedPublicationMetadataRead | None = None
     title: str | None = None

@@ -82,4 +82,12 @@ export const rootApiClient = {
       },
       API_ROOT_URL,
     ),
+  delete: <T>(path: string) =>
+    request<T>(
+      path,
+      {
+        method: "DELETE",
+      },
+      API_ROOT_URL,
+    ),
 };

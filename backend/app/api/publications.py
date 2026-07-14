@@ -14,6 +14,11 @@ from app.models.source_file import SourceFile
 from app.models.topic import Topic
 from app.schemas.publication import PublicationCreate, PublicationRead, PublicationUpdate
 from app.services.pdf_import import save_uploaded_pdf_as_source_file
+from app.services.pdf_processing_queue import enqueue_pdf_processing
+from app.services.publication_cleanup_service import (
+    delete_managed_upload_file,
+    delete_publication_with_resources,
+)
 from app.services.author_resolver import get_or_create_author
 from app.services.keyword_resolver import get_or_create_keyword
 from app.services.topic_resolver import get_or_create_topic
@@ -399,6 +404,13 @@ async def create_publication(
 
     await db.commit()
 
+    if data.import_item_id is not None and source_file_id is not None:
+        await enqueue_pdf_processing(
+            db,
+            source_file_id,
+            skip_processed=True,
+        )
+
     return await get_publication_or_404(publication.id, db)
 
 
@@ -589,6 +601,5 @@ async def delete_publication(
     db: AsyncSession = Depends(get_db),
 ):
     publication = await get_publication_or_404(publication_id, db)
-
-    await db.delete(publication)
-    await db.commit()
+    cleanup = await delete_publication_with_resources(db, publication)
+    delete_managed_upload_file(cleanup.source_file_path)

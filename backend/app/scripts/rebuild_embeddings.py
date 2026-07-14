@@ -13,7 +13,12 @@ BATCH_SIZE = 16
 
 
 async def rebuild_embeddings() -> None:
-    embedding_service = EmbeddingService(settings.embedding_model_name)
+    embedding_service = EmbeddingService(
+        settings.embedding_model_name,
+        batch_size=settings.embedding_batch_size,
+        cpu_threads=settings.embedding_cpu_threads,
+        max_concurrent_jobs=settings.embedding_max_concurrent_jobs,
+    )
 
     async with async_session_maker() as session:
         total_updated = 0

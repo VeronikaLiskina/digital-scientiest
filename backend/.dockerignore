@@ -1,6 +1,9 @@
 .venv
 __pycache__
 .pytest_cache
+.test-tmp*
+.codex-*-test-tmp
+.codex-bulk-processing-test
 .tmp_pytest
 *.pyc
 uploads

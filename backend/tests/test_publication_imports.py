@@ -99,6 +99,7 @@ async def test_publication_import_duplicate_and_error_items_are_isolated(
 @pytest.mark.asyncio
 async def test_create_publication_marks_import_item_saved(client, monkeypatch):
     from app.api import publication_imports
+    from app.services import pdf_processing_queue
     from app.services.pdf_import import ExtractedPublicationMetadata
 
     def fake_extract(_file_path, original_name=None):
@@ -117,6 +118,12 @@ async def test_create_publication_marks_import_item_saved(client, monkeypatch):
         )
 
     monkeypatch.setattr(publication_imports, "extract_publication_metadata_from_pdf", fake_extract)
+    queued_source_file_ids: list[int] = []
+    monkeypatch.setattr(
+        pdf_processing_queue,
+        "_start_processing_task",
+        queued_source_file_ids.append,
+    )
 
     batch_response = await client.post(
         "/api/publication-imports",
@@ -148,6 +155,8 @@ async def test_create_publication_marks_import_item_saved(client, monkeypatch):
     batch_after = await client.get(f"/api/publication-imports/{batch_response.json()['id']}")
     saved_item = batch_after.json()["items"][0]
     assert saved_item["status"] == "saved"
+    assert saved_item["processing_status"] == "queued"
     assert saved_item["publication_id"] == create_response.json()["id"]
     assert batch_after.json()["saved_count"] == 1
     assert batch_after.json()["needs_review_count"] == 0
+    assert queued_source_file_ids == [item["source_file_id"]]

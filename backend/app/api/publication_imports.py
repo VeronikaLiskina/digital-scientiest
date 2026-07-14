@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +64,9 @@ def _to_catalog_match_reads(result: CatalogMatchResult) -> list[CatalogMatchRead
 
 
 def _batch_load_options():
-    return (selectinload(ImportBatch.items),)
+    return (
+        selectinload(ImportBatch.items).selectinload(ImportItem.source_file),
+    )
 
 
 def _item_to_read(item: ImportItem) -> ImportItemRead:
@@ -77,6 +81,9 @@ def _item_to_read(item: ImportItem) -> ImportItemRead:
         publication_id=item.publication_id,
         original_file_name=item.original_file_name,
         status=item.status,
+        processing_status=(
+            item.source_file.processing_status if item.source_file else None
+        ),
         error_message=item.error_message,
         extracted_metadata=extracted,
         title=item.title,
@@ -131,7 +138,8 @@ async def _build_extracted_metadata_read(
     source_file: SourceFile,
     embedding_service: EmbeddingService | None = None,
 ) -> ExtractedPublicationMetadataRead:
-    extracted = extract_publication_metadata_from_pdf(
+    extracted = await asyncio.to_thread(
+        extract_publication_metadata_from_pdf,
         source_file.file_path,
         original_name=source_file.file_name,
     )
@@ -319,7 +327,12 @@ async def get_publication_import_item(
     item_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    item = await db.get(ImportItem, item_id)
+    result = await db.execute(
+        select(ImportItem)
+        .where(ImportItem.id == item_id)
+        .options(selectinload(ImportItem.source_file))
+    )
+    item = result.scalar_one_or_none()
 
     if item is None:
         raise HTTPException(status_code=404, detail="Import item not found")

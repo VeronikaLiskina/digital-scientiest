@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,7 @@ from app.services.pdf_import import (
     extract_publication_metadata_from_pdf,
     save_uploaded_pdf_as_source_file,
 )
+from app.services.pdf_processing_queue import enqueue_pdf_processing
 from app.services.topic_resolver import get_or_create_topic
 
 router = APIRouter(prefix="/import/publications", tags=["Publication import"])
@@ -149,7 +152,8 @@ async def import_pdf_batch(
                 await db.commit()
                 continue
 
-            extracted = extract_publication_metadata_from_pdf(
+            extracted = await asyncio.to_thread(
+                extract_publication_metadata_from_pdf,
                 source_file.file_path,
             )
 
@@ -262,6 +266,11 @@ async def confirm_publication_import(
             source_file.processing_status = "requires_review"
 
             await db.commit()
+            await enqueue_pdf_processing(
+                db,
+                item.source_file_id,
+                skip_processed=True,
+            )
             loaded_publication = await get_publication_with_relations(
                 db=db,
                 publication_id=publication.id,

@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -31,11 +33,37 @@ from app.services.pdf_import import (
     validate_pdf_upload,
 )
 from app.services.pdf_processing import process_pdf_file
+from app.services.pdf_processing_queue import enqueue_pdf_processing
+from app.services.publication_cleanup_service import delete_managed_upload_file
 from app.services.topic_suggester import suggest_topic_names
 from app.utils.file_hash import calculate_file_hash
 
 
 router = APIRouter(prefix="/source-files", tags=["Source files"])
+logger = logging.getLogger(__name__)
+
+
+def _metadata_extraction_error_message(exc: Exception) -> str:
+    """Return a useful explanation without losing the original error reason."""
+    reason = " ".join(str(exc).split()).strip()
+    reason_lower = reason.lower()
+
+    if any(marker in reason_lower for marker in ("password", "decrypt", "encrypted")):
+        explanation = "PDF защищён паролем или запрещает извлечение текста."
+    elif any(marker in reason_lower for marker in ("ocr", "tesseract", "text layer")):
+        explanation = (
+            "В PDF не найден пригодный текстовый слой, а распознавание скана (OCR) "
+            "не завершилось."
+        )
+    elif any(marker in reason_lower for marker in ("eof", "xref", "invalid pdf", "pdf header")):
+        explanation = "PDF повреждён или имеет неподдерживаемую структуру."
+    else:
+        explanation = "Во время чтения PDF произошла ошибка."
+
+    if reason:
+        return f"{explanation} Техническая причина: {reason[:500]}"
+
+    return explanation
 
 
 def _merge_names(values: list[str]) -> list[str]:
@@ -194,16 +222,22 @@ async def extract_pdf_metadata(
         )
 
     try:
-        extracted = extract_publication_metadata_from_bytes(
+        extracted = await asyncio.to_thread(
+            extract_publication_metadata_from_bytes,
             content,
             original_name=file.filename,
         )
     except Exception as exc:
+        logger.exception(
+            "Failed to extract publication metadata from PDF %r (hash=%s)",
+            file.filename,
+            file_hash,
+        )
         return SourceFileMetadataPreview(
             status="metadata_error",
             file_hash=file_hash,
             review_status="manual_entry",
-            message=f"PDF выбран, но не удалось извлечь метаданные: {exc}",
+            message=_metadata_extraction_error_message(exc),
             extracted=None,
         )
 
@@ -271,16 +305,22 @@ async def extract_stored_pdf_metadata(
     )
 
     try:
-        extracted = extract_publication_metadata_from_pdf(
+        extracted = await asyncio.to_thread(
+            extract_publication_metadata_from_pdf,
             file_path,
             original_name=source_file.file_name,
         )
     except Exception as exc:
+        logger.exception(
+            "Failed to extract publication metadata from stored PDF %s (%r)",
+            source_file.id,
+            source_file.file_name,
+        )
         return SourceFileMetadataPreview(
             status="metadata_error",
             file_hash=preview_file_hash,
             review_status="manual_entry",
-            message=f"PDF найден, но не удалось извлечь метаданные: {exc}",
+            message=_metadata_extraction_error_message(exc),
             extracted=None,
         )
 
@@ -336,6 +376,22 @@ async def process_source_file(
         )
 
 
+@router.post("/{source_file_id}/process/start", status_code=status.HTTP_202_ACCEPTED)
+async def start_source_file_processing(
+    source_file_id: int,
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        processing_status = await enqueue_pdf_processing(db, source_file_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Source file not found")
+
+    return {
+        "source_file_id": source_file_id,
+        "status": processing_status,
+    }
+
+
 @router.patch("/{source_file_id}", response_model=SourceFileRead)
 async def update_source_file(
     source_file_id: int,
@@ -368,5 +424,7 @@ async def delete_source_file(
     if source_file is None:
         raise HTTPException(status_code=404, detail="Source file not found")
 
+    file_path = source_file.file_path
     await db.delete(source_file)
     await db.commit()
+    delete_managed_upload_file(file_path)

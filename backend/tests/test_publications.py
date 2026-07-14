@@ -1,5 +1,7 @@
 import pytest
 
+from app.core.config import settings
+
 
 async def create_author(client, full_name="Иванов Иван Иванович"):
     response = await client.post(
@@ -265,3 +267,99 @@ async def test_delete_publication(client):
     get_response = await client.get(f"/api/publications/{publication_id}")
 
     assert get_response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_delete_publication_cleans_exclusive_resources_and_keeps_shared(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    monkeypatch.setattr(settings, "upload_dir", str(tmp_path))
+    pdf_path = tmp_path / "publication-cleanup.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4 cleanup test")
+
+    source_response = await client.post(
+        "/api/source-files",
+        json={
+            "file_name": pdf_path.name,
+            "file_path": str(pdf_path),
+            "file_type": "application/pdf",
+            "processing_status": "processed",
+        },
+    )
+    assert source_response.status_code == 201
+    source_file_id = source_response.json()["id"]
+
+    exclusive_author = await create_author(client, "Exclusive Cleanup Author")
+    shared_author = await create_author(client, "Shared Cleanup Author")
+    exclusive_topic = await create_topic(client, "Exclusive Cleanup Topic")
+    shared_topic = await create_topic(client, "Shared Cleanup Topic")
+    exclusive_keyword = await create_keyword(client, "exclusive-cleanup-keyword")
+    shared_keyword = await create_keyword(client, "shared-cleanup-keyword")
+
+    shared_publication_response = await client.post(
+        "/api/publications",
+        json={
+            "title": "Publication keeping shared catalog entries",
+            "status": "draft",
+            "author_ids": [shared_author["id"]],
+            "topic_ids": [shared_topic["id"]],
+            "keyword_ids": [shared_keyword["id"]],
+        },
+    )
+    assert shared_publication_response.status_code == 201
+
+    deleted_publication_response = await client.post(
+        "/api/publications",
+        json={
+            "title": "Publication with resources to clean",
+            "status": "draft",
+            "source_file_id": source_file_id,
+            "author_ids": [exclusive_author["id"], shared_author["id"]],
+            "topic_ids": [exclusive_topic["id"], shared_topic["id"]],
+            "keyword_ids": [exclusive_keyword["id"], shared_keyword["id"]],
+        },
+    )
+    assert deleted_publication_response.status_code == 201
+    publication_id = deleted_publication_response.json()["id"]
+
+    chunk_response = await client.post(
+        "/api/document-chunks",
+        json={
+            "publication_id": publication_id,
+            "chunk_text": "Chunk removed with its publication",
+            "page_number": 1,
+            "chunk_index": 0,
+        },
+    )
+    assert chunk_response.status_code == 201
+    chunk_id = chunk_response.json()["id"]
+
+    log_response = await client.post(
+        "/api/processing-logs",
+        json={
+            "source_file_id": source_file_id,
+            "publication_id": publication_id,
+            "step_name": "cleanup-test",
+            "status": "success",
+        },
+    )
+    assert log_response.status_code == 201
+    log_id = log_response.json()["id"]
+
+    delete_response = await client.delete(f"/api/publications/{publication_id}")
+
+    assert delete_response.status_code == 204
+    assert not pdf_path.exists()
+    assert (await client.get(f"/api/source-files/{source_file_id}")).status_code == 404
+    assert (await client.get(f"/api/document-chunks/{chunk_id}")).status_code == 404
+    assert (await client.get(f"/api/processing-logs/{log_id}")).status_code == 404
+
+    assert (await client.get(f"/api/authors/{exclusive_author['id']}")).status_code == 404
+    assert (await client.get(f"/api/topics/{exclusive_topic['id']}")).status_code == 404
+    assert (await client.get(f"/api/keywords/{exclusive_keyword['id']}")).status_code == 404
+
+    assert (await client.get(f"/api/authors/{shared_author['id']}")).status_code == 200
+    assert (await client.get(f"/api/topics/{shared_topic['id']}")).status_code == 200
+    assert (await client.get(f"/api/keywords/{shared_keyword['id']}")).status_code == 200

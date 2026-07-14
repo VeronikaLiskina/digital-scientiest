@@ -1,11 +1,44 @@
 from app.services.pdf_import import (
+    ExtractedPublicationMetadata,
     _dedupe_phrases,
     _extract_keywords,
     _extract_keywords_from_focused_text,
     _extract_topics_from_keywords,
     _filter_author_phrases,
     _format_phrase,
+    _needs_ai_publication_analysis,
 )
+
+
+def _metadata(**overrides) -> ExtractedPublicationMetadata:
+    values = {
+        "title": "Reliable title",
+        "year": 2025,
+        "language": "en",
+        "publication_type": "article",
+        "doi": None,
+        "authors": ["A. Author"],
+        "keywords": ["geology"],
+        "topics": ["Geology"],
+        "title_source": "pdf",
+        "title_confidence": "high",
+        "title_warning": None,
+    }
+    values.update(overrides)
+    return ExtractedPublicationMetadata(**values)
+
+
+def test_ai_analysis_is_skipped_when_lightweight_metadata_is_complete():
+    assert _needs_ai_publication_analysis(_metadata()) is False
+
+
+def test_ai_analysis_is_used_as_fallback_for_incomplete_metadata():
+    assert _needs_ai_publication_analysis(_metadata(authors=[])) is True
+    assert _needs_ai_publication_analysis(_metadata(keywords=[])) is True
+    assert _needs_ai_publication_analysis(_metadata(year=None)) is True
+    assert _needs_ai_publication_analysis(
+        _metadata(title_source="filename", title_confidence="medium")
+    ) is True
 
 
 def test_explicit_keywords_are_cleaned_and_normalized():

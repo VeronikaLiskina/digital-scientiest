@@ -27,7 +27,8 @@
     color: $success;
   }
 
-  &_processing {
+  &_processing,
+  &_queued {
     background: #eef3ff;
     color: $primary;
   }

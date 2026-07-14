@@ -112,6 +112,28 @@ async def test_extract_metadata_endpoint_does_not_save_file_and_suggests_existin
 
 
 @pytest.mark.asyncio
+async def test_extract_metadata_endpoint_returns_actual_extraction_error(client, monkeypatch):
+    from app.api import source_files
+
+    def fake_extract(_content: bytes, original_name: str | None = None):
+        raise RuntimeError("OCR timed out on page 1")
+
+    monkeypatch.setattr(source_files, "extract_publication_metadata_from_bytes", fake_extract)
+
+    response = await client.post(
+        "/api/source-files/extract-metadata",
+        files={"file": ("scan.pdf", b"%PDF-1.4 test", "application/pdf")},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "metadata_error"
+    assert data["review_status"] == "manual_entry"
+    assert data["extracted"] is None
+    assert "OCR timed out on page 1" in data["message"]
+
+
+@pytest.mark.asyncio
 async def test_create_publication_resolves_confirmed_names_only_on_submit(client):
     response = await client.post(
         "/api/publications",

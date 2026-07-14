@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { documentChunksApi } from "../api/documentChunksApi";
 import { processingLogsApi } from "../api/processingLogsApi";
@@ -28,7 +28,9 @@ function getLogMessage(log: ProcessingLog) {
 
 export function PublicationDetailsPage() {
   const { publicationId } = useParams();
+  const [searchParams] = useSearchParams();
   const id = Number(publicationId);
+  const isAutomaticProcessing = searchParams.get("processing") === "started";
 
   const [publication, setPublication] = useState<Publication | null>(null);
   const [chunks, setChunks] = useState<DocumentChunk[]>([]);
@@ -68,6 +70,59 @@ export function PublicationDetailsPage() {
       );
     });
   }, [id]);
+
+  useEffect(() => {
+    if (!isAutomaticProcessing || !publication?.source_file_id) return;
+
+    setIsProcessing(true);
+    setProcessingMessage("PDF сохранён. Чанки создаются в фоновом режиме…");
+
+    const refreshProgress = async () => {
+      const [updatedChunks, updatedLogs] = await Promise.all([
+        documentChunksApi.getAll(publication.id),
+        processingLogsApi.getAll(publication.source_file_id!),
+      ]);
+
+      setChunks(updatedChunks);
+      setLogs(updatedLogs);
+
+      const finished = updatedLogs.find(
+        (log) => log.step_name === "processing_finished" && log.status === "success",
+      );
+      const failed = updatedLogs.find(
+        (log) => log.step_name === "processing_failed" && log.status === "error",
+      );
+
+      if (finished) {
+        setIsProcessing(false);
+        setProcessingMessage(`Обработка завершена. Создано чанков: ${updatedChunks.length}`);
+        return true;
+      }
+
+      if (failed) {
+        setIsProcessing(false);
+        setProcessingMessage(failed.error_message || "Не удалось обработать PDF.");
+        return true;
+      }
+
+      return false;
+    };
+
+    let intervalId: ReturnType<typeof setInterval> | undefined;
+    void refreshProgress().then((done) => {
+      if (!done) {
+        intervalId = setInterval(() => {
+          void refreshProgress().then((finished) => {
+            if (finished && intervalId) clearInterval(intervalId);
+          });
+        }, 3000);
+      }
+    });
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isAutomaticProcessing, publication?.id, publication?.source_file_id]);
 
   async function handleProcessPdf() {
     if (!publication?.source_file_id) {
@@ -213,9 +268,7 @@ export function PublicationDetailsPage() {
 
       {processingMessage && (
         <p
-          className={
-            processingMessage.includes("завершена") ? "success" : "error"
-          }
+          className={isProcessing ? "warning" : chunks.length > 0 ? "success" : "error"}
         >
           {processingMessage}
         </p>

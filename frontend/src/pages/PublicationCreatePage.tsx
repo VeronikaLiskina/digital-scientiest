@@ -304,7 +304,10 @@ export function PublicationCreatePage() {
 
       if (!extracted) {
         setMetadataReviewStatus("manual_entry");
-        setMetadataMessage("PDF выбран, но данные для автозаполнения не найдены. Заполните карточку вручную.");
+        setMetadataMessage(
+          preview.message?.trim() ||
+            "PDF выбран, но данные для автозаполнения не найдены. Заполните карточку вручную.",
+        );
         return;
       }
 
@@ -416,7 +419,15 @@ export function PublicationCreatePage() {
         ? await publicationsApi.createWithFile(formData, selectedPdfFile)
         : await publicationsApi.create(formData);
 
-      navigate(batchId ? `/admin/publications/import?batch_id=${batchId}` : `/admin/publications/${created.id}`);
+      if (selectedPdfFile && created.source_file_id) {
+        await sourceFilesApi.startProcessing(created.source_file_id);
+      }
+
+      navigate(
+        batchId
+          ? `/admin/publications/import?batch_id=${batchId}`
+          : `/admin/publications/${created.id}${selectedPdfFile ? "?processing=started" : ""}`,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Не удалось создать публикацию");
     } finally {

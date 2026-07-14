@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 import re
 
-from pypdf import PdfReader
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -13,6 +12,7 @@ from app.models.processing_log import ProcessingLog
 from app.models.publication import Publication
 from app.models.source_file import SourceFile
 from app.services.embedding_service import EmbeddingService
+from app.services.pdf_text_extraction import PdfQuality, extract_pdf_pages
 from app.services.semantic_chunking import (
     clean_text_for_semantic_chunking,
     split_text_into_semantic_chunks,
@@ -119,6 +119,21 @@ class ChunkPayload:
     chunk_text: str
     page_number: int
     chunk_index: int
+
+
+class ExtractedTextBlocks(list[TextBlock]):
+    """List-compatible result carrying PDF extraction diagnostics."""
+
+    def __init__(
+        self,
+        values: list[TextBlock],
+        *,
+        pdf_quality: PdfQuality,
+        ocr_pages: list[int],
+    ) -> None:
+        super().__init__(values)
+        self.pdf_quality = pdf_quality
+        self.ocr_pages = ocr_pages
 
 
 def add_section_breaks(text: str) -> str:
@@ -305,28 +320,30 @@ def split_page_into_blocks(
     return blocks, section_title
 
 
-def extract_text_blocks(file_path: Path) -> list[TextBlock]:
-    reader = PdfReader(str(file_path))
-
+def extract_text_blocks(file_path: Path) -> ExtractedTextBlocks:
+    extraction = extract_pdf_pages(file_path)
     text_blocks: list[TextBlock] = []
     current_section = "Metadata"
 
-    for page_index, page in enumerate(reader.pages, start=1):
-        raw_text = page.extract_text() or ""
-        cleaned_text = clean_pdf_text(raw_text)
+    for extracted_page in extraction.pages:
+        cleaned_text = clean_pdf_text(extracted_page.text)
 
         if not cleaned_text:
             continue
 
         page_blocks, current_section = split_page_into_blocks(
-            page_number=page_index,
+            page_number=extracted_page.index + 1,
             page_text=cleaned_text,
             current_section=current_section,
         )
 
         text_blocks.extend(page_blocks)
 
-    return text_blocks
+    return ExtractedTextBlocks(
+        text_blocks,
+        pdf_quality=extraction.quality,
+        ocr_pages=extraction.ocr_pages,
+    )
 
 
 def find_chunk_end(text: str, start: int, max_size: int) -> int:
@@ -475,6 +492,8 @@ async def process_pdf_file(
 
     try:
         source_file.processing_status = "processing"
+        if publication is not None:
+            publication.status = "review"
         await db.commit()
 
         await add_processing_log(
@@ -492,7 +511,12 @@ async def process_pdf_file(
         if publication is None:
             raise ValueError("Сначала создайте карточку публикации для этого файла")
 
-        text_blocks = extract_text_blocks(file_path)
+        text_blocks = await asyncio.to_thread(extract_text_blocks, file_path)
+
+        pdf_quality = getattr(text_blocks, "pdf_quality", None)
+
+        if pdf_quality is not None:
+            source_file.pdf_quality = pdf_quality
 
         if not text_blocks:
             raise ValueError("Не удалось извлечь текст из PDF")
@@ -591,6 +615,7 @@ async def process_pdf_file(
         await db.commit()
 
         source_file.processing_status = "processed"
+        publication.status = "processed"
         await db.commit()
 
         await add_processing_log(
@@ -616,6 +641,13 @@ async def process_pdf_file(
 
         if source_file is not None:
             source_file.processing_status = "error"
+
+        if publication is not None:
+            publication = await db.get(Publication, publication.id)
+            if publication is not None:
+                publication.status = "review"
+
+        if source_file is not None or publication is not None:
             await db.commit()
 
         await add_processing_log(
