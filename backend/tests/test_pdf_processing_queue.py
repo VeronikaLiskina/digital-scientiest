@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -75,3 +76,53 @@ async def test_automatic_enqueue_does_not_start_duplicate_processing(
     assert status == processing_status
     assert db.commit_count == 0
     assert started == []
+
+
+async def test_background_processing_respects_concurrency_limit(monkeypatch):
+    first_started = asyncio.Event()
+    release_first = asyncio.Event()
+    started: list[int] = []
+    active_jobs = 0
+    max_active_jobs = 0
+
+    async def fake_process(source_file_id: int) -> None:
+        nonlocal active_jobs, max_active_jobs
+        started.append(source_file_id)
+        active_jobs += 1
+        max_active_jobs = max(max_active_jobs, active_jobs)
+
+        try:
+            if source_file_id == 1:
+                first_started.set()
+                await release_first.wait()
+        finally:
+            active_jobs -= 1
+
+    monkeypatch.setattr(
+        pdf_processing_queue,
+        "_processing_slots",
+        asyncio.BoundedSemaphore(1),
+    )
+    monkeypatch.setattr(
+        pdf_processing_queue,
+        "_run_source_file_processing",
+        fake_process,
+    )
+
+    first_task = asyncio.create_task(
+        pdf_processing_queue._process_source_file_in_background(1)
+    )
+    await first_started.wait()
+    second_task = asyncio.create_task(
+        pdf_processing_queue._process_source_file_in_background(2)
+    )
+    await asyncio.sleep(0)
+
+    assert started == [1]
+    assert max_active_jobs == 1
+
+    release_first.set()
+    await asyncio.gather(first_task, second_task)
+
+    assert started == [1, 2]
+    assert max_active_jobs == 1

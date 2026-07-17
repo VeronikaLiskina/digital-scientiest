@@ -73,6 +73,8 @@ MIN_SHORT_QUERY_PARTIAL_SIMILARITY = 0.72
 MIN_LONG_QUERY_PARTIAL_SIMILARITY = 0.70
 HIGH_SEMANTIC_SIMILARITY = 0.78
 MIN_SEMANTIC_SUPPLEMENT_SIMILARITY = 0.70
+MIN_CROSS_LANGUAGE_SIMILARITY = 0.65
+CROSS_LANGUAGE_RANK_BOOST = 0.03
 MIN_SHARED_PREFIX_LENGTH = 6
 MIN_SHARED_PREFIX_RATIO = 0.75
 
@@ -112,6 +114,68 @@ def _chunk_text(chunk: dict) -> str:
             str(chunk.get("text") or ""),
         ]
     )
+
+
+def _dominant_script(text: str) -> str | None:
+    cyrillic_count = len(re.findall(r"[А-Яа-яЁё]", text))
+    latin_count = len(re.findall(r"[A-Za-z]", text))
+
+    if cyrillic_count > latin_count:
+        return "cyrillic"
+    if latin_count > cyrillic_count:
+        return "latin"
+    return None
+
+
+def _is_cross_language_source(question: str, chunk: dict) -> bool:
+    question_script = _dominant_script(question)
+    source_script = _dominant_script(
+        str(chunk.get("text") or chunk.get("publication_title") or "")
+    )
+
+    return (
+        question_script is not None
+        and source_script is not None
+        and question_script != source_script
+    )
+
+
+def _candidate_rank_score(question: str, chunk: dict) -> float:
+    similarity = float(chunk.get("similarity") or 0)
+    if (
+        similarity >= MIN_CROSS_LANGUAGE_SIMILARITY
+        and _is_cross_language_source(question, chunk)
+    ):
+        return similarity + CROSS_LANGUAGE_RANK_BOOST
+    return similarity
+
+
+def _promote_cross_language_candidates(
+    question: str,
+    candidates: list[dict],
+) -> list[dict]:
+    """Promote only cross-language matches while preserving all other ordering."""
+    ranked: list[dict] = []
+
+    for chunk in candidates:
+        if not (
+            float(chunk.get("similarity") or 0)
+            >= MIN_CROSS_LANGUAGE_SIMILARITY
+            and _is_cross_language_source(question, chunk)
+        ):
+            ranked.append(chunk)
+            continue
+
+        rank_score = _candidate_rank_score(question, chunk)
+        insert_at = len(ranked)
+        for index, existing in enumerate(ranked):
+            if _candidate_rank_score(question, existing) < rank_score:
+                insert_at = index
+                break
+
+        ranked.insert(insert_at, chunk)
+
+    return ranked
 
 
 def _tokens_match(left: str, right: str) -> bool:
@@ -248,8 +312,15 @@ def select_answer_sources(
             if id(chunk) in relevant_chunk_ids
             or float(chunk.get("similarity") or 0)
             >= MIN_SEMANTIC_SUPPLEMENT_SIMILARITY
+            or (
+                float(chunk.get("similarity") or 0)
+                >= MIN_CROSS_LANGUAGE_SIMILARITY
+                and _is_cross_language_source(question, chunk)
+            )
         ]
     else:
         candidates = chunks
+
+    candidates = _promote_cross_language_candidates(question, candidates)
 
     return diversify_chunks_by_publication(candidates, limit)

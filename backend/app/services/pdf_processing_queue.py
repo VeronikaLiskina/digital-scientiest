@@ -3,6 +3,7 @@ import asyncio
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.db.database import async_session_maker
 from app.dependencies import get_embedding_service
 from app.models.publication import Publication
@@ -14,9 +15,12 @@ from app.services.pdf_processing import add_processing_log, process_pdf_file
 
 _processing_tasks: set[asyncio.Task[None]] = set()
 _embedding_service_lock = asyncio.Lock()
+_processing_slots = asyncio.BoundedSemaphore(
+    max(1, settings.pdf_processing_max_concurrent_jobs)
+)
 
 
-async def _process_source_file_in_background(source_file_id: int) -> None:
+async def _run_source_file_processing(source_file_id: int) -> None:
     try:
         async with async_session_maker() as db:
             source_file = await db.get(SourceFile, source_file_id)
@@ -67,6 +71,12 @@ async def _process_source_file_in_background(source_file_id: int) -> None:
                 message="PDF background processing failed to start",
                 error_message=str(exc),
             )
+
+
+async def _process_source_file_in_background(source_file_id: int) -> None:
+    """Run one heavy PDF job without exceeding the configured process limit."""
+    async with _processing_slots:
+        await _run_source_file_processing(source_file_id)
 
 
 def _start_processing_task(source_file_id: int) -> None:

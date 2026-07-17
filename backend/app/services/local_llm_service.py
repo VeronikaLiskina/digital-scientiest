@@ -5,7 +5,54 @@ import httpx
 from app.core.config import settings
 
 
-CHINESE_RE = re.compile(r"[\u4e00-\u9fff]")
+CHINESE_RE = re.compile(
+    r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff"
+    r"\U00020000-\U0002fa1f\U00030000-\U000323af]"
+)
+CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+LATIN_RE = re.compile(r"[A-Za-z]")
+
+LANGUAGE_RETRY_INSTRUCTIONS = {
+    "ru": "Сгенерируй новый ответ строго на русском языке, без китайских иероглифов.",
+    "en": "Generate a new answer strictly in English, without Chinese characters.",
+}
+
+LANGUAGE_FAILURE_MESSAGES = {
+    "ru": (
+        "Не удалось сформировать корректный ответ на русском языке. "
+        "Пожалуйста, повторите вопрос."
+    ),
+    "en": (
+        "I could not generate a valid answer in English. "
+        "Please try asking the question again."
+    ),
+}
+
+
+class LocalLLMError(RuntimeError):
+    """Base error for failures that can be safely shown by the assistant API."""
+
+
+class OllamaUnavailableError(LocalLLMError):
+    """Ollama cannot be reached."""
+
+
+class OllamaTimeoutError(LocalLLMError):
+    """Ollama did not finish generation in time."""
+
+
+class OllamaGenerationError(LocalLLMError):
+    """Ollama responded, but a usable answer could not be generated."""
+
+
+def detect_question_language(question: str) -> str:
+    """Detect the expected answer language from the user's question."""
+    if CYRILLIC_RE.search(question):
+        return "ru"
+    if LATIN_RE.search(question):
+        return "en"
+    return "ru"
+
 
 RAG_SYSTEM_PROMPT = (
     "Ты AI-ассистент системы «Цифровой учёный».\n"
@@ -50,33 +97,53 @@ class LocalLLMService:
     async def generate_answer(
         self,
         prompt: str,
+        *,
+        expected_language: str = "ru",
     ) -> str:
-        return await self._generate_with_system_prompt(prompt, RAG_SYSTEM_PROMPT)
+        return await self._generate_with_system_prompt(
+            prompt,
+            RAG_SYSTEM_PROMPT,
+            expected_language=expected_language,
+        )
 
-    async def generate_general_knowledge_answer(self, prompt: str) -> str:
+    async def generate_general_knowledge_answer(
+        self,
+        prompt: str,
+        *,
+        expected_language: str = "ru",
+    ) -> str:
         return await self._generate_with_system_prompt(
             prompt,
             GENERAL_KNOWLEDGE_SYSTEM_PROMPT,
+            expected_language=expected_language,
         )
 
     async def _generate_with_system_prompt(
         self,
         prompt: str,
         system_prompt: str,
+        *,
+        expected_language: str,
     ) -> str:
+        expected_language = (
+            expected_language if expected_language in LANGUAGE_FAILURE_MESSAGES else "ru"
+        )
         answer = await self._request_ollama(prompt, system_prompt=system_prompt)
 
         if CHINESE_RE.search(answer):
             retry_prompt = (
                 "Предыдущий ответ содержал китайские символы. "
-                "Перепиши ответ полностью без китайского языка и без китайских иероглифов. "
-                "Сохрани смысл, не добавляй новых фактов и отвечай строго на языке вопроса пользователя.\n\n"
+                f"{LANGUAGE_RETRY_INSTRUCTIONS[expected_language]} "
+                "Используй только факты из исходного задания.\n\n"
                 f"{prompt}"
             )
             answer = await self._request_ollama(
                 retry_prompt,
                 system_prompt=system_prompt,
             )
+
+        if CHINESE_RE.search(answer):
+            return LANGUAGE_FAILURE_MESSAGES[expected_language]
 
         return answer
 
@@ -108,18 +175,38 @@ class LocalLLMService:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.post(url, json=payload)
                 response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise OllamaTimeoutError(
+                "Модель не успела подготовить ответ за отведённое время"
+            ) from exc
         except httpx.ConnectError as exc:
-            raise RuntimeError(
-                f"Ollama не запущена или недоступна по адресу {self.base_url}"
+            raise OllamaUnavailableError(
+                "Сервис локальной модели сейчас недоступен"
             ) from exc
         except httpx.HTTPStatusError as exc:
-            raise RuntimeError(
-                f"Ошибка ответа Ollama: {exc.response.status_code}"
+            raise OllamaGenerationError(
+                f"Сервис модели вернул ошибку {exc.response.status_code}"
+            ) from exc
+        except httpx.RequestError as exc:
+            raise OllamaUnavailableError(
+                "Не удалось связаться с сервисом локальной модели"
             ) from exc
 
-        data = response.json()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise OllamaGenerationError(
+                "Сервис модели вернул некорректный ответ"
+            ) from exc
 
         try:
-            return data["message"]["content"]
-        except KeyError as exc:
-            raise RuntimeError("Ollama вернула неожиданный формат ответа") from exc
+            answer = data["message"]["content"]
+        except (KeyError, TypeError) as exc:
+            raise OllamaGenerationError(
+                "Сервис модели вернул ответ в неожиданном формате"
+            ) from exc
+
+        if not isinstance(answer, str) or not answer.strip():
+            raise OllamaGenerationError("Модель вернула пустой ответ")
+
+        return answer.strip()

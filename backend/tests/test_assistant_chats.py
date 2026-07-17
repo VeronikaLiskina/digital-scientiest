@@ -3,6 +3,11 @@ import pytest
 from app.api import assistant
 from app.dependencies import get_embedding_service
 from app.main import app
+from app.services.local_llm_service import (
+    OllamaGenerationError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+)
 
 
 class FakeEmbeddingService:
@@ -64,3 +69,61 @@ async def test_chat_history_create_send_reopen_and_delete(client, monkeypatch):
     deleted = await client.delete(f"/assistant/chats/{chat_id}")
     assert deleted.status_code == 204
     assert (await client.get(f"/assistant/chats/{chat_id}")).status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("error", "expected_status", "expected_code", "expected_title"),
+    [
+        (
+            OllamaUnavailableError("offline"),
+            503,
+            "ollama_unavailable",
+            "Ассистент временно недоступен",
+        ),
+        (
+            OllamaTimeoutError("slow"),
+            504,
+            "ollama_timeout",
+            "Ответ занял слишком много времени",
+        ),
+        (
+            OllamaGenerationError("invalid response"),
+            502,
+            "generation_failed",
+            "Не удалось подготовить ответ",
+        ),
+    ],
+)
+async def test_chat_returns_clear_recoverable_model_errors(
+    client,
+    monkeypatch,
+    error,
+    expected_status,
+    expected_code,
+    expected_title,
+):
+    async def failing_answer_question(**_kwargs):
+        raise error
+
+    monkeypatch.setattr(assistant, "_answer_question", failing_answer_question)
+    app.dependency_overrides[get_embedding_service] = lambda: FakeEmbeddingService()
+
+    created = await client.post("/assistant/chats", json={})
+    chat_id = created.json()["id"]
+    response = await client.post(
+        f"/assistant/chats/{chat_id}/messages",
+        json={"content": "Расскажите о Байкале"},
+    )
+
+    assert response.status_code == expected_status
+    detail = response.json()["detail"]
+    assert detail["code"] == expected_code
+    assert detail["title"] == expected_title
+    assert detail["retryable"] is True
+    assert isinstance(detail["message"], str) and detail["message"]
+    assert "Traceback" not in response.text
+
+    # A failed exchange is rolled back, so retrying does not duplicate the question.
+    saved_chat = await client.get(f"/assistant/chats/{chat_id}")
+    assert saved_chat.json()["messages"] == []

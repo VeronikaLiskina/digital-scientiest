@@ -1,11 +1,18 @@
+import httpx
 import pytest
 
 from app.api import assistant
 from app.schemas.assistant import AssistantAskResponse
+from app.services import local_llm_service
 from app.services.local_llm_service import (
+    CHINESE_RE,
     GENERAL_KNOWLEDGE_SYSTEM_PROMPT,
     LocalLLMService,
+    OllamaGenerationError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
     RAG_SYSTEM_PROMPT,
+    detect_question_language,
 )
 from app.services.prompt_builder import (
     build_general_fallback_prompt,
@@ -40,6 +47,74 @@ class StubEmbeddingService:
         return [0.1, 0.2]
 
 
+class StubHTTPClient:
+    def __init__(self, result) -> None:
+        self.result = result
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def post(self, *_args, **_kwargs):
+        if isinstance(self.result, Exception):
+            raise self.result
+        return self.result
+
+
+@pytest.mark.parametrize(
+    ("request_error", "expected_error"),
+    [
+        (httpx.ConnectError("offline"), OllamaUnavailableError),
+        (httpx.ReadTimeout("slow"), OllamaTimeoutError),
+    ],
+)
+async def test_ollama_request_maps_connection_failures(
+    monkeypatch,
+    request_error,
+    expected_error,
+):
+    monkeypatch.setattr(
+        local_llm_service.httpx,
+        "AsyncClient",
+        lambda **_kwargs: StubHTTPClient(request_error),
+    )
+
+    with pytest.raises(expected_error):
+        await LocalLLMService()._request_ollama("Вопрос", system_prompt="Правила")
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        httpx.Response(
+            500,
+            request=httpx.Request("POST", "http://ollama.test/api/chat"),
+        ),
+        httpx.Response(
+            200,
+            content=b"not-json",
+            request=httpx.Request("POST", "http://ollama.test/api/chat"),
+        ),
+        httpx.Response(
+            200,
+            json={"message": {"content": "   "}},
+            request=httpx.Request("POST", "http://ollama.test/api/chat"),
+        ),
+    ],
+)
+async def test_ollama_request_rejects_unusable_generation(monkeypatch, response):
+    monkeypatch.setattr(
+        local_llm_service.httpx,
+        "AsyncClient",
+        lambda **_kwargs: StubHTTPClient(response),
+    )
+
+    with pytest.raises(OllamaGenerationError):
+        await LocalLLMService()._request_ollama("Вопрос", system_prompt="Правила")
+
+
 async def test_generate_answer_retries_when_answer_contains_chinese_characters():
     service = StubLLMService(
         [
@@ -54,6 +129,33 @@ async def test_generate_answer_retries_when_answer_contains_chinese_characters()
     assert len(service.requests) == 2
     assert "Предыдущий ответ содержал китайские символы" in service.requests[1][0]
     assert "Вопрос пользователя" in service.requests[1][0]
+
+
+async def test_generate_answer_never_returns_chinese_after_failed_retry():
+    service = StubLLMService(
+        [
+            "Первый ответ содержит 中文.",
+            "Повторный ответ всё ещё содержит 中文.",
+        ]
+    )
+
+    answer = await service.generate_answer(
+        "Вопрос пользователя",
+        expected_language="ru",
+    )
+
+    assert answer == (
+        "Не удалось сформировать корректный ответ на русском языке. "
+        "Пожалуйста, повторите вопрос."
+    )
+    assert CHINESE_RE.search(answer) is None
+    assert len(service.requests) == 2
+
+
+def test_detect_question_language_uses_user_question_script():
+    assert detect_question_language("Как сформировался Байкальский рифт?") == "ru"
+    assert detect_question_language("How did the Baikal Rift form?") == "en"
+    assert detect_question_language("Возраст Udzha paleorift?") == "ru"
 
 
 async def test_generate_answer_does_not_retry_when_answer_has_no_chinese_characters():
@@ -137,8 +239,14 @@ async def test_answer_without_sources_discloses_general_knowledge_and_has_no_sou
             return []
 
     class GeneralKnowledgeLLMService:
-        async def generate_general_knowledge_answer(self, prompt: str) -> str:
+        async def generate_general_knowledge_answer(
+            self,
+            prompt: str,
+            *,
+            expected_language: str,
+        ) -> str:
             assert "ответ из общих знаний" in prompt
+            assert expected_language == "ru"
             return "Фотосинтез — процесс преобразования энергии света."
 
     monkeypatch.setattr(assistant, "SemanticSearchRepository", EmptyRepository)
@@ -181,7 +289,13 @@ async def test_answer_returns_sources_with_exact_public_contract(monkeypatch):
             return [chunk]
 
     class AnsweringLLMService:
-        async def generate_answer(self, _prompt: str) -> str:
+        async def generate_answer(
+            self,
+            _prompt: str,
+            *,
+            expected_language: str,
+        ) -> str:
+            assert expected_language == "ru"
             return "В публикации описано несколько этапов магматизма."
 
     monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
@@ -363,6 +477,39 @@ def test_answer_source_selection_keeps_strong_semantic_supplements():
         [direct_match, semantic_match],
         limit=5,
     ) == [direct_match, semantic_match]
+
+
+def test_answer_source_selection_prioritizes_cross_language_semantic_match():
+    same_language_noise = {
+        "publication_id": 1,
+        "publication_title": "Геохимические особенности минералов",
+        "text": "Обсуждаются общие подходы к генетической классификации.",
+        "similarity": 0.68,
+    }
+    cross_language_match = {
+        "publication_id": 2,
+        "publication_title": (
+            "Apatite Geochemistry of the Slyudyanka Deposit: "
+            "Multivariate Analysis for Genetic Classification"
+        ),
+        "text": "Trace element composition and the Y/Ho anomaly are analyzed.",
+        "similarity": 0.66,
+    }
+    weak_cross_language_noise = {
+        "publication_id": 3,
+        "publication_title": "Unrelated mantle geodynamics",
+        "text": "The paper discusses mantle evolution.",
+        "similarity": 0.64,
+    }
+
+    assert select_answer_sources(
+        (
+            "Какие геохимические особенности апатита Слюдянского месторождения "
+            "используются для генетической классификации?"
+        ),
+        [same_language_noise, cross_language_match, weak_cross_language_noise],
+        limit=2,
+    ) == [cross_language_match, same_language_noise]
 
 
 def test_answer_source_selection_prefers_different_publications():

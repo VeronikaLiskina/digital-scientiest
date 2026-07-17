@@ -8,6 +8,7 @@ import {
   type ChatMessage,
   type ChatSummary,
 } from "../../api/assistantApi";
+import { ApiError } from "../../api/client";
 
 function sourceLink(source: AssistantSource) {
   return `/publications/${source.publication_id}`;
@@ -35,10 +36,37 @@ function similarityPercent(similarity: number) {
   });
 }
 
-function errorText(error: unknown) {
-  return error instanceof Error && error.message
-    ? error.message
-    : "Не удалось выполнить запрос. Попробуйте ещё раз.";
+interface ChatError {
+  title: string;
+  message: string;
+  retryable: boolean;
+}
+
+function errorDetails(error: unknown): ChatError {
+  if (error instanceof ApiError) {
+    return {
+      title: error.title ?? "Не удалось выполнить запрос",
+      message: error.message,
+      retryable: error.retryable,
+    };
+  }
+
+  if (error instanceof TypeError) {
+    return {
+      title: "Нет связи с сервером",
+      message: "Проверьте подключение и повторите запрос через несколько секунд.",
+      retryable: true,
+    };
+  }
+
+  return {
+    title: "Что-то пошло не так",
+    message:
+      error instanceof Error && error.message
+        ? error.message
+        : "Не удалось выполнить запрос. Попробуйте ещё раз.",
+    retryable: true,
+  };
 }
 
 export function ReaderAssistantPage() {
@@ -46,7 +74,8 @@ export function ReaderAssistantPage() {
   const [activeChat, setActiveChat] = useState<ChatDetail | null>(null);
   const [query, setQuery] = useState("");
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<ChatError | null>(null);
+  const [failedQuery, setFailedQuery] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,7 +94,8 @@ export function ReaderAssistantPage() {
         await openChat(items[0].id);
       }
     } catch (err) {
-      setError(errorText(err));
+      setFailedQuery(null);
+      setError(errorDetails(err));
     }
   }
 
@@ -74,7 +104,8 @@ export function ReaderAssistantPage() {
     try {
       setActiveChat(await assistantApi.getChat(chatId));
     } catch (err) {
-      setError(errorText(err));
+      setFailedQuery(null);
+      setError(errorDetails(err));
     }
   }
 
@@ -86,7 +117,8 @@ export function ReaderAssistantPage() {
       setActiveChat(chat);
       setQuery("");
     } catch (err) {
-      setError(errorText(err));
+      setFailedQuery(null);
+      setError(errorDetails(err));
     }
   }
 
@@ -103,7 +135,8 @@ export function ReaderAssistantPage() {
         }
       }
     } catch (err) {
-      setError(errorText(err));
+      setFailedQuery(null);
+      setError(errorDetails(err));
     }
   }
 
@@ -112,8 +145,15 @@ export function ReaderAssistantPage() {
     const content = query.trim();
     if (content.length < 2 || isLoading) return;
 
+    await submitMessage(content);
+  }
+
+  async function submitMessage(content: string) {
+    let submittedChatId = activeChat?.id ?? null;
+
     setIsLoading(true);
     setError(null);
+    setFailedQuery(null);
     setQuery("");
 
     try {
@@ -122,6 +162,7 @@ export function ReaderAssistantPage() {
         chat = await assistantApi.createChat();
         setActiveChat(chat);
       }
+      submittedChatId = chat.id;
 
       const temporaryMessage: ChatMessage = {
         id: -Date.now(),
@@ -148,10 +189,24 @@ export function ReaderAssistantPage() {
         ...current.filter((item) => item.id !== reply.chat.id),
       ]);
     } catch (err) {
-      setError(errorText(err));
-      if (activeChat) await openChat(activeChat.id);
+      setError(errorDetails(err));
+      setFailedQuery(content);
+
+      if (submittedChatId !== null) {
+        try {
+          setActiveChat(await assistantApi.getChat(submittedChatId));
+        } catch {
+          // Keep the actionable generation error visible.
+        }
+      }
     } finally {
       setIsLoading(false);
+    }
+  }
+
+  async function retryFailedQuery() {
+    if (failedQuery && !isLoading) {
+      await submitMessage(failedQuery);
     }
   }
 
@@ -231,6 +286,15 @@ export function ReaderAssistantPage() {
                       ))}
                     </div>
                   )}
+                  {message.role === "assistant" && message.sources.length === 0 && (
+                    <div className="chat-message__notice">
+                      <span aria-hidden="true">i</span>
+                      <div>
+                        <strong>Фрагменты не найдены</strong>
+                        <p>Ответ основан на общих знаниях, а не на материалах архива.</p>
+                      </div>
+                    </div>
+                  )}
                 </article>
               ))
             )}
@@ -243,7 +307,33 @@ export function ReaderAssistantPage() {
             <div ref={messagesEndRef} />
           </div>
 
-          {error && <div className="message message--error chat-error">{error}</div>}
+          {error && (
+            <div className="chat-error" role="alert">
+              <span className="chat-error__icon" aria-hidden="true">!</span>
+              <div className="chat-error__content">
+                <strong>{error.title}</strong>
+                <p>{error.message}</p>
+              </div>
+              {error.retryable && failedQuery && (
+                <button
+                  className="button button_secondary chat-error__retry"
+                  type="button"
+                  disabled={isLoading}
+                  onClick={retryFailedQuery}
+                >
+                  Повторить
+                </button>
+              )}
+              <button
+                className="chat-error__close"
+                type="button"
+                aria-label="Закрыть сообщение"
+                onClick={() => setError(null)}
+              >
+                ×
+              </button>
+            </div>
+          )}
 
           <form className="chat-composer" onSubmit={handleSubmit}>
             <textarea

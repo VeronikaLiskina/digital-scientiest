@@ -196,8 +196,7 @@ def extract_pdf_pages(
     elif native_pages_count:
         quality = "text_pdf"
     else:
-        # No usable text layer means a scan/empty-image PDF even when OCR could
-        # not recognize its contents.
+
         quality = "scan_pdf"
 
     if (

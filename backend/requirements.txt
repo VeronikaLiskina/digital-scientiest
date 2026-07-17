@@ -22,6 +22,7 @@ torch
 
 pytest==9.1.0
 pytest-asyncio==1.4.0
-PyMuPDF
-pytesseract
-Pillow
+
+PyMuPDF==1.28.0
+pytesseract==0.3.13
+Pillow==12.3.0

@@ -23,7 +23,14 @@ from app.schemas.assistant import (
     ChatReply,
 )
 from app.services.embedding_service import EmbeddingService
-from app.services.local_llm_service import LocalLLMService
+from app.services.local_llm_service import (
+    LocalLLMError,
+    LocalLLMService,
+    OllamaGenerationError,
+    OllamaTimeoutError,
+    OllamaUnavailableError,
+    detect_question_language,
+)
 from app.services.prompt_builder import (
     build_general_fallback_prompt,
     build_rag_context,
@@ -35,6 +42,52 @@ from app.services.source_relevance import select_answer_sources
 router = APIRouter(prefix="/assistant", tags=["Assistant"])
 
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+
+
+def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
+    if isinstance(exc, OllamaTimeoutError):
+        status_code = status.HTTP_504_GATEWAY_TIMEOUT
+        detail = {
+            "code": "ollama_timeout",
+            "title": "Ответ занял слишком много времени",
+            "message": (
+                "Модель не успела завершить ответ. Попробуйте повторить запрос "
+                "или сформулировать его короче."
+            ),
+            "retryable": True,
+        }
+    elif isinstance(exc, OllamaUnavailableError):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = {
+            "code": "ollama_unavailable",
+            "title": "Ассистент временно недоступен",
+            "message": (
+                "Не удалось подключиться к локальной модели. Проверьте, что "
+                "Ollama запущена, и повторите запрос."
+            ),
+            "retryable": True,
+        }
+    elif isinstance(exc, OllamaGenerationError):
+        status_code = status.HTTP_502_BAD_GATEWAY
+        detail = {
+            "code": "generation_failed",
+            "title": "Не удалось подготовить ответ",
+            "message": (
+                "Модель вернула некорректный результат. Повторите запрос — "
+                "обычно это временная ошибка."
+            ),
+            "retryable": True,
+        }
+    else:
+        status_code = status.HTTP_502_BAD_GATEWAY
+        detail = {
+            "code": "assistant_failed",
+            "title": "Не удалось получить ответ",
+            "message": "Повторите запрос через несколько секунд.",
+            "retryable": True,
+        }
+
+    return HTTPException(status_code=status_code, detail=detail)
 
 
 def _general_knowledge_disclaimer(question: str) -> str:
@@ -134,6 +187,7 @@ async def _answer_question(
     embedding_service: EmbeddingService,
     conversation: str | None = None,
 ) -> dict[str, Any]:
+    expected_language = detect_question_language(question)
     query_embedding = await asyncio.to_thread(
         embedding_service.embed_text,
         question,
@@ -157,7 +211,10 @@ async def _answer_question(
     if not chunks:
         prompt = build_general_fallback_prompt(question, conversation)
         llm_service = LocalLLMService()
-        general_answer = await llm_service.generate_general_knowledge_answer(prompt)
+        general_answer = await llm_service.generate_general_knowledge_answer(
+            prompt,
+            expected_language=expected_language,
+        )
         return {
             "question": question,
             "answer": f"{_general_knowledge_disclaimer(question)}\n\n{general_answer.strip()}",
@@ -167,7 +224,10 @@ async def _answer_question(
     context = build_rag_context(chunks)
     prompt = build_rag_prompt(question, context, conversation)
     llm_service = LocalLLMService()
-    answer = await llm_service.generate_answer(prompt)
+    answer = await llm_service.generate_answer(
+        prompt,
+        expected_language=expected_language,
+    )
 
     sources = _build_answer_sources(chunks)
     return {"question": question, "answer": answer, "sources": sources}
@@ -179,13 +239,16 @@ async def ask_assistant(
     db: AsyncSession = Depends(get_db),
     embedding_service: EmbeddingService = Depends(get_embedding_service),
 ):
-    return await _answer_question(
-        question=data.question,
-        limit=data.limit,
-        min_similarity=data.min_similarity,
-        db=db,
-        embedding_service=embedding_service,
-    )
+    try:
+        return await _answer_question(
+            question=data.question,
+            limit=data.limit,
+            min_similarity=data.min_similarity,
+            db=db,
+            embedding_service=embedding_service,
+        )
+    except LocalLLMError as exc:
+        raise _assistant_http_error(exc) from exc
 
 
 @router.get("/chats", response_model=list[ChatRead])
@@ -242,17 +305,20 @@ async def send_chat_message(
     user_message = ChatMessage(chat=chat, role="user", content=content)
     chat.updated_at = now
     db.add(user_message)
-    await db.commit()
-    await db.refresh(user_message)
+    await db.flush()
 
-    result = await _answer_question(
-        question=content,
-        limit=data.limit,
-        min_similarity=data.min_similarity,
-        db=db,
-        embedding_service=embedding_service,
-        conversation=conversation,
-    )
+    try:
+        result = await _answer_question(
+            question=content,
+            limit=data.limit,
+            min_similarity=data.min_similarity,
+            db=db,
+            embedding_service=embedding_service,
+            conversation=conversation,
+        )
+    except LocalLLMError as exc:
+        await db.rollback()
+        raise _assistant_http_error(exc) from exc
 
     assistant_message = ChatMessage(
         chat_id=chat.id,

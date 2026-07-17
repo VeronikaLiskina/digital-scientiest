@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     embedding_batch_size: int = 16
     embedding_cpu_threads: int = 2
     embedding_max_concurrent_jobs: int = 1
+    pdf_processing_max_concurrent_jobs: int = 1
 
     ollama_base_url: str = "http://127.0.0.1:11434"
     ollama_model: str = "qwen2.5:7b"
