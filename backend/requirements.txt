@@ -2,6 +2,7 @@
 
 alembic==1.18.4
 asyncpg==0.31.0
+celery==5.5.3
 fastapi==0.136.3
 httpx==0.28.1
 pgvector==0.4.2
@@ -12,6 +13,7 @@ pymorphy3-dicts-ru==2.4.417150.4580142
 pypdf==6.13.2
 python-dotenv==1.2.2
 python-multipart==0.0.32
+redis==6.2.0
 SQLAlchemy==2.0.50
 uvicorn==0.49.0
 

@@ -1,3 +1,5 @@
+import os
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -18,8 +20,9 @@ from app.models.processing_log import ProcessingLog  # noqa: F401
 from app.models.publication_import import ImportBatch, ImportItem  # noqa: F401
 
 
-TEST_DATABASE_URL = (
-    "postgresql+asyncpg://postgres:nika@127.0.0.1:55432/digital_scientist_test"
+TEST_DATABASE_URL = os.getenv(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:nika@127.0.0.1:55432/digital_scientist_test",
 )
 
 test_engine = create_async_engine(

@@ -11,6 +11,11 @@ from app.services.local_llm_service import (
 
 
 class FakeEmbeddingService:
+    model_name = "fake-embedding-model"
+
+    def embed_query(self, _text: str) -> list[float]:
+        return [0.1] * 768
+
     def embed_text(self, _text: str) -> list[float]:
         return [0.1] * 768
 
@@ -25,6 +30,11 @@ async def test_chat_history_create_send_reopen_and_delete(client, monkeypatch):
             "question": kwargs["question"],
             "answer": f"Ответ: {kwargs['question']}",
             "sources": [],
+            "answer_blocks": [
+                {"text": f"Ответ: {kwargs['question']}", "source_ids": []}
+            ],
+            "answer_origin": "external",
+            "catalog": None,
         }
 
     monkeypatch.setattr(assistant, "_answer_question", fake_answer_question)
@@ -43,6 +53,7 @@ async def test_chat_history_create_send_reopen_and_delete(client, monkeypatch):
     assert first.json()["chat"]["title"] == "Что такое магматизм?"
     assert first.json()["user_message"]["role"] == "user"
     assert first.json()["assistant_message"]["role"] == "assistant"
+    assert first.json()["assistant_message"]["answer_origin"] == "external"
     assert conversations[0] == ""
 
     second = await client.post(

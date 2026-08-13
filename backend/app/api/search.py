@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +11,7 @@ from app.services.embedding_service import EmbeddingService
 
 
 router = APIRouter(prefix="/search", tags=["Search"])
+logger = logging.getLogger(__name__)
 
 
 @router.get("/semantic")
@@ -21,7 +23,7 @@ async def semantic_search(
     embedding_service: EmbeddingService = Depends(get_embedding_service),
 ):
     query_embedding = await asyncio.to_thread(
-        embedding_service.embed_text,
+        embedding_service.embed_query,
         query,
     )
 
@@ -29,8 +31,14 @@ async def semantic_search(
 
     results = await repository.search_chunks(
         query_embedding=query_embedding,
+        embedding_model=embedding_service.model_name,
+        query_text=query,
         limit=limit,
         min_similarity=min_similarity,
+    )
+    logger.info(
+        "final_selected_chunks=%s",
+        [result.get("chunk_id") for result in results],
     )
 
     return {

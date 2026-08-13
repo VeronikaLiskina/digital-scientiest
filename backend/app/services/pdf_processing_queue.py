@@ -1,52 +1,68 @@
-import asyncio
+from dataclasses import dataclass
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
 from app.db.database import async_session_maker
-from app.dependencies import get_embedding_service
+from app.models.document_chunk import DocumentChunk
 from app.models.publication import Publication
 from app.models.publication_import import ImportItem
 from app.models.source_file import SourceFile
-from app.models.document_chunk import DocumentChunk
-from app.services.pdf_processing import add_processing_log, process_pdf_file
+from app.services.pdf_processing import add_processing_log
+from app.tasks.pdf_processing import process_pdf_task
 
 
-_processing_tasks: set[asyncio.Task[None]] = set()
-_embedding_service_lock = asyncio.Lock()
-_processing_slots = asyncio.BoundedSemaphore(
-    max(1, settings.pdf_processing_max_concurrent_jobs)
-)
+class PdfProcessingQueueError(RuntimeError):
+    """The broker did not accept a PDF processing task."""
 
 
-async def _run_source_file_processing(source_file_id: int) -> None:
+@dataclass(frozen=True)
+class PdfProcessingEnqueueResult:
+    task_id: str | None
+    source_file_id: int
+    status: str
+
+
+async def enqueue_pdf_processing(
+    db: AsyncSession,
+    source_file_id: int,
+    *,
+    skip_processed: bool = False,
+) -> PdfProcessingEnqueueResult:
+    """Atomically persist queued state and publish one id-only Celery task."""
+    source_file = await db.get(SourceFile, source_file_id)
+    if source_file is None:
+        raise ValueError("Source file not found")
+
+    await db.refresh(source_file, with_for_update=True)
+
+    # "processed" is the legacy equivalent of "completed". Never publish a
+    # second task for either state, even when an older caller omits the flag.
+    statuses_to_skip = {"queued", "processing", "completed", "processed"}
+
+    if source_file.processing_status in statuses_to_skip:
+        status = (
+            "completed"
+            if source_file.processing_status == "processed"
+            else source_file.processing_status
+        )
+        return PdfProcessingEnqueueResult(
+            task_id=source_file.processing_task_id,
+            source_file_id=source_file_id,
+            status=status,
+        )
+
+    source_file.processing_status = "queued"
+    await db.flush()
+
     try:
-        async with async_session_maker() as db:
-            source_file = await db.get(SourceFile, source_file_id)
-            if source_file is None:
-                return
-
-            source_file.processing_status = "processing"
-            await db.commit()
-
-            async with _embedding_service_lock:
-                embedding_service = await asyncio.to_thread(get_embedding_service)
-            await process_pdf_file(
-                db=db,
-                source_file_id=source_file_id,
-                embedding_service=embedding_service,
-            )
+        celery_result = process_pdf_task.delay(source_file_id)
     except Exception as exc:
-        # process_pdf_file logs its own failures. This branch also makes failures
-        # during embedding-service startup visible instead of leaving "queued"
-        # forever without a diagnostic record.
-        async with async_session_maker() as db:
-            source_file = await db.get(SourceFile, source_file_id)
-            if source_file is None or source_file.processing_status == "error":
-                return
-
-            source_file.processing_status = "error"
+        await db.rollback()
+        source_file = await db.get(SourceFile, source_file_id)
+        if source_file is not None:
+            source_file.processing_status = "failed"
+            source_file.processing_task_id = None
             await db.commit()
 
             publication_id = (
@@ -56,61 +72,30 @@ async def _run_source_file_processing(source_file_id: int) -> None:
                     )
                 )
             ).scalar_one_or_none()
-            if publication_id is not None:
-                publication = await db.get(Publication, publication_id)
-                if publication is not None:
-                    publication.status = "review"
-                    await db.commit()
-
             await add_processing_log(
                 db=db,
                 source_file_id=source_file_id,
                 publication_id=publication_id,
-                step_name="processing_start_failed",
+                step_name="processing_enqueue_failed",
                 status="error",
-                message="PDF background processing failed to start",
+                message="Failed to enqueue PDF processing task",
                 error_message=str(exc),
             )
 
+        raise PdfProcessingQueueError("PDF processing broker is unavailable") from exc
 
-async def _process_source_file_in_background(source_file_id: int) -> None:
-    """Run one heavy PDF job without exceeding the configured process limit."""
-    async with _processing_slots:
-        await _run_source_file_processing(source_file_id)
-
-
-def _start_processing_task(source_file_id: int) -> None:
-    task = asyncio.create_task(_process_source_file_in_background(source_file_id))
-    _processing_tasks.add(task)
-    task.add_done_callback(_processing_tasks.discard)
-
-
-async def enqueue_pdf_processing(
-    db: AsyncSession,
-    source_file_id: int,
-    *,
-    skip_processed: bool = False,
-) -> str:
-    """Persist the queued state before starting PDF chunking in the background."""
-    source_file = await db.get(SourceFile, source_file_id)
-    if source_file is None:
-        raise ValueError("Source file not found")
-
-    statuses_to_skip = {"queued", "processing"}
-    if skip_processed:
-        statuses_to_skip.add("processed")
-
-    if source_file.processing_status in statuses_to_skip:
-        return source_file.processing_status
-
-    source_file.processing_status = "queued"
+    source_file.processing_task_id = celery_result.id
     await db.commit()
-    _start_processing_task(source_file_id)
-    return "queued"
+
+    return PdfProcessingEnqueueResult(
+        task_id=celery_result.id,
+        source_file_id=source_file_id,
+        status="queued",
+    )
 
 
 async def recover_saved_imports_without_chunks() -> list[int]:
-    """Requeue saved bulk-import publications left without chunks after a restart."""
+    """Queue saved imports that have no chunks and no active Celery task."""
     async with async_session_maker() as db:
         source_file_ids = list(
             (
@@ -122,7 +107,12 @@ async def recover_saved_imports_without_chunks() -> list[int]:
                         DocumentChunk,
                         DocumentChunk.publication_id == Publication.id,
                     )
-                    .where(ImportItem.status == "saved")
+                    .where(
+                        ImportItem.status == "saved",
+                        SourceFile.processing_status.not_in(
+                            {"queued", "processing", "completed", "processed"}
+                        ),
+                    )
                     .group_by(SourceFile.id)
                     .having(func.count(DocumentChunk.id) == 0)
                     .order_by(SourceFile.id)
@@ -131,20 +121,10 @@ async def recover_saved_imports_without_chunks() -> list[int]:
         )
 
         for source_file_id in source_file_ids:
-            source_file = await db.get(SourceFile, source_file_id)
-            if source_file is None:
-                continue
-
-            # queued/processing belongs to the previous process and no longer has
-            # a live asyncio task after application restart.
-            if source_file.processing_status in {"queued", "processing"}:
-                source_file.processing_status = "requires_review"
-                await db.commit()
-
             await enqueue_pdf_processing(
                 db,
                 source_file_id,
-                skip_processed=False,
+                skip_processed=True,
             )
 
         return source_file_ids

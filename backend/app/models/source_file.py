@@ -29,6 +29,11 @@ class SourceFile(Base):
         default="new",
         nullable=False,
     )
+    processing_task_id: Mapped[str | None] = mapped_column(
+        String(255),
+        index=True,
+        nullable=True,
+    )
 
     comment: Mapped[str | None] = mapped_column(Text, nullable=True)
 

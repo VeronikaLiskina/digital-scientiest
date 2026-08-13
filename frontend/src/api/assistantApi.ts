@@ -1,11 +1,45 @@
 import { rootApiClient } from "./client";
 
 export interface AssistantSource {
+  source_id: string;
   publication_id: number;
   publication_title: string;
   chunk_id: number;
   chunk_index: number;
   similarity: number;
+}
+
+export type AnswerOrigin = "internal" | "external" | "catalog";
+
+export interface AssistantAnswerBlock {
+  text: string;
+  source_ids: string[];
+}
+
+export interface AssistantCatalogItem {
+  publication_id: number;
+  title: string;
+  year: number | null;
+  authors: string[];
+  publication_type: string | null;
+  publication_url: string;
+  description: string | null;
+}
+
+export interface AssistantCatalog {
+  total: number;
+  returned_count: number;
+  truncated: boolean;
+  items: AssistantCatalogItem[];
+}
+
+export interface AssistantAskResponse {
+  question: string;
+  answer: string;
+  sources: AssistantSource[];
+  answer_blocks: AssistantAnswerBlock[];
+  answer_origin: AnswerOrigin;
+  catalog: AssistantCatalog | null;
 }
 
 export interface ChatMessage {
@@ -14,6 +48,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources: AssistantSource[];
+  answer_blocks: AssistantAnswerBlock[];
+  answer_origin: AnswerOrigin | null;
+  catalog: AssistantCatalog | null;
   created_at: string;
 }
 
@@ -45,6 +82,7 @@ export const assistantApi = {
       content,
       limit: 10,
       min_similarity: 0.55,
+      detail_percent: 80,
     }),
   deleteChat: (chatId: number) =>
     rootApiClient.delete<void>(`/assistant/chats/${chatId}`),

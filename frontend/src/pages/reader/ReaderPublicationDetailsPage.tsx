@@ -45,7 +45,6 @@ export function ReaderPublicationDetailsPage() {
     () => getSelectedChunkId(search, hash),
     [search, hash],
   );
-  const isAssistantSource = new URLSearchParams(search).get("source") === "assistant";
 
   useEffect(() => {
     if (!id) return;
@@ -131,7 +130,7 @@ export function ReaderPublicationDetailsPage() {
         }
       />
 
-      {isAssistantSource && selectedChunkId && (
+      {selectedChunkId && (
         <div className="reader-source-context">
           <strong>Источник из ответа ассистента</strong>
           <span>

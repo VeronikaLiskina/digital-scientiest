@@ -67,12 +67,12 @@ async def suggest_topic_names(
 
     if embedding_service is not None:
         query_embedding = await asyncio.to_thread(
-            embedding_service.embed_text,
+            embedding_service.embed_query,
             query_text,
         )
         topic_texts = [name for _name, name in topic_candidates]
         topic_embeddings = await asyncio.to_thread(
-            embedding_service.embed_texts,
+            embedding_service.embed_documents,
             topic_texts,
         )
 

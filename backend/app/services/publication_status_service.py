@@ -7,7 +7,7 @@ from app.models.source_file import SourceFile
 
 
 def status_for_pdf_state(processing_status: str, chunk_count: int) -> str:
-    if processing_status == "processed" and chunk_count > 0:
+    if processing_status in {"completed", "processed"} and chunk_count > 0:
         return "processed"
     return "review"
 

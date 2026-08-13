@@ -119,11 +119,12 @@ async def test_create_publication_marks_import_item_saved(client, monkeypatch):
 
     monkeypatch.setattr(publication_imports, "extract_publication_metadata_from_pdf", fake_extract)
     queued_source_file_ids: list[int] = []
-    monkeypatch.setattr(
-        pdf_processing_queue,
-        "_start_processing_task",
-        queued_source_file_ids.append,
-    )
+
+    def delay(source_file_id: int):
+        queued_source_file_ids.append(source_file_id)
+        return type("TaskResult", (), {"id": f"task-{source_file_id}"})()
+
+    monkeypatch.setattr(pdf_processing_queue.process_pdf_task, "delay", delay)
 
     batch_response = await client.post(
         "/api/publication-imports",

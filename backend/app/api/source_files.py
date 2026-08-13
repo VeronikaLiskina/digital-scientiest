@@ -13,6 +13,7 @@ from app.models.source_file import SourceFile
 from app.schemas.source_file import (
     CatalogMatchRead,
     ExtractedPublicationMetadataRead,
+    PdfProcessingTaskRead,
     SourceFileCreate,
     SourceFileMetadataPreview,
     SourceFileRead,
@@ -32,8 +33,10 @@ from app.services.pdf_import import (
     save_uploaded_pdf_as_source_file,
     validate_pdf_upload,
 )
-from app.services.pdf_processing import process_pdf_file
-from app.services.pdf_processing_queue import enqueue_pdf_processing
+from app.services.pdf_processing_queue import (
+    PdfProcessingQueueError,
+    enqueue_pdf_processing,
+)
 from app.services.publication_cleanup_service import delete_managed_upload_file
 from app.services.topic_suggester import suggest_topic_names
 from app.utils.file_hash import calculate_file_hash
@@ -354,42 +357,53 @@ async def download_source_file(
     )
 
 
-@router.post("/{source_file_id}/process")
+async def _enqueue_source_file_processing(
+    source_file_id: int,
+    db: AsyncSession,
+) -> dict[str, int | str | None]:
+    try:
+        result = await enqueue_pdf_processing(
+            db,
+            source_file_id,
+            skip_processed=True,
+        )
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Source file not found")
+    except PdfProcessingQueueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(exc),
+        ) from exc
+
+    return {
+        "task_id": result.task_id,
+        "source_file_id": result.source_file_id,
+        "status": result.status,
+    }
+
+
+@router.post(
+    "/{source_file_id}/process",
+    response_model=PdfProcessingTaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def process_source_file(
     source_file_id: int,
     db: AsyncSession = Depends(get_db),
-    embedding_service: EmbeddingService = Depends(get_embedding_service),
 ):
-    try:
-        result = await process_pdf_file(
-            db=db,
-            source_file_id=source_file_id,
-            embedding_service=embedding_service,
-        )
-
-        return result
-
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail=str(exc),
-        )
+    return await _enqueue_source_file_processing(source_file_id, db)
 
 
-@router.post("/{source_file_id}/process/start", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/{source_file_id}/process/start",
+    response_model=PdfProcessingTaskRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def start_source_file_processing(
     source_file_id: int,
     db: AsyncSession = Depends(get_db),
 ):
-    try:
-        processing_status = await enqueue_pdf_processing(db, source_file_id)
-    except ValueError:
-        raise HTTPException(status_code=404, detail="Source file not found")
-
-    return {
-        "source_file_id": source_file_id,
-        "status": processing_status,
-    }
+    return await _enqueue_source_file_processing(source_file_id, db)
 
 
 @router.patch("/{source_file_id}", response_model=SourceFileRead)

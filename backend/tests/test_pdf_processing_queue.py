@@ -1,4 +1,3 @@
-import asyncio
 from types import SimpleNamespace
 
 import pytest
@@ -12,117 +11,140 @@ async def prepare_test_database():
     yield
 
 
+class StubScalarResult:
+    def scalar_one_or_none(self):
+        return None
+
+
 class StubSession:
     def __init__(self, source_file) -> None:
         self.source_file = source_file
         self.commit_count = 0
+        self.flush_count = 0
+        self.rollback_count = 0
+        self.lock_count = 0
 
     async def get(self, _model, _source_file_id):
         return self.source_file
 
+    async def refresh(self, _instance, *, with_for_update=False) -> None:
+        self.lock_count += int(with_for_update)
+
+    async def flush(self) -> None:
+        self.flush_count += 1
+
     async def commit(self) -> None:
         self.commit_count += 1
 
+    async def rollback(self) -> None:
+        self.rollback_count += 1
+
+    async def execute(self, _query):
+        return StubScalarResult()
+
+
+def source_file(status: str, task_id: str | None = None):
+    return SimpleNamespace(
+        processing_status=status,
+        processing_task_id=task_id,
+    )
+
 
 def test_publication_status_follows_pdf_state():
+    assert status_for_pdf_state("completed", 3) == "processed"
+    assert status_for_pdf_state("completed", 0) == "review"
     assert status_for_pdf_state("processed", 3) == "processed"
-    assert status_for_pdf_state("processed", 0) == "review"
     assert status_for_pdf_state("processing", 0) == "review"
-    assert status_for_pdf_state("error", 0) == "review"
+    assert status_for_pdf_state("failed", 0) == "review"
 
 
-async def test_enqueue_pdf_processing_marks_file_queued_before_start(monkeypatch):
-    source_file = SimpleNamespace(processing_status="requires_review")
-    db = StubSession(source_file)
-    started: list[int] = []
+async def test_enqueue_pdf_processing_persists_queued_state_and_celery_id(
+    monkeypatch,
+):
+    stored_file = source_file("requires_review")
+    db = StubSession(stored_file)
+    delayed: list[int] = []
+
+    def delay(source_file_id: int):
+        delayed.append(source_file_id)
+        return SimpleNamespace(id="celery-task-42")
+
     monkeypatch.setattr(
-        pdf_processing_queue,
-        "_start_processing_task",
-        started.append,
+        pdf_processing_queue.process_pdf_task,
+        "delay",
+        delay,
     )
 
-    status = await pdf_processing_queue.enqueue_pdf_processing(
-        db,
-        42,
-        skip_processed=True,
-    )
+    result = await pdf_processing_queue.enqueue_pdf_processing(db, 42)
 
-    assert status == "queued"
-    assert source_file.processing_status == "queued"
+    assert result.task_id == "celery-task-42"
+    assert result.source_file_id == 42
+    assert result.status == "queued"
+    assert stored_file.processing_status == "queued"
+    assert stored_file.processing_task_id == "celery-task-42"
+    assert db.lock_count == 1
+    assert db.flush_count == 1
     assert db.commit_count == 1
-    assert started == [42]
+    assert delayed == [42]
 
 
-@pytest.mark.parametrize("processing_status", ["queued", "processing", "processed"])
-async def test_automatic_enqueue_does_not_start_duplicate_processing(
+@pytest.mark.parametrize(
+    ("processing_status", "expected_status"),
+    [
+        ("queued", "queued"),
+        ("processing", "processing"),
+        ("completed", "completed"),
+        ("processed", "completed"),
+    ],
+)
+async def test_enqueue_is_idempotent_for_active_and_completed_files(
     monkeypatch,
     processing_status,
+    expected_status,
 ):
-    source_file = SimpleNamespace(processing_status=processing_status)
-    db = StubSession(source_file)
-    started: list[int] = []
+    stored_file = source_file(processing_status, "existing-task")
+    db = StubSession(stored_file)
+    delayed: list[int] = []
     monkeypatch.setattr(
-        pdf_processing_queue,
-        "_start_processing_task",
-        started.append,
+        pdf_processing_queue.process_pdf_task,
+        "delay",
+        delayed.append,
     )
 
-    status = await pdf_processing_queue.enqueue_pdf_processing(
-        db,
-        42,
-        skip_processed=True,
-    )
+    result = await pdf_processing_queue.enqueue_pdf_processing(db, 42)
 
-    assert status == processing_status
+    assert result.task_id == "existing-task"
+    assert result.status == expected_status
+    assert db.flush_count == 0
     assert db.commit_count == 0
-    assert started == []
+    assert delayed == []
 
 
-async def test_background_processing_respects_concurrency_limit(monkeypatch):
-    first_started = asyncio.Event()
-    release_first = asyncio.Event()
-    started: list[int] = []
-    active_jobs = 0
-    max_active_jobs = 0
+async def test_enqueue_failure_is_stored_in_postgresql(monkeypatch):
+    stored_file = source_file("requires_review")
+    db = StubSession(stored_file)
+    logged: list[dict] = []
 
-    async def fake_process(source_file_id: int) -> None:
-        nonlocal active_jobs, max_active_jobs
-        started.append(source_file_id)
-        active_jobs += 1
-        max_active_jobs = max(max_active_jobs, active_jobs)
+    def unavailable(_source_file_id: int):
+        raise ConnectionError("redis unavailable")
 
-        try:
-            if source_file_id == 1:
-                first_started.set()
-                await release_first.wait()
-        finally:
-            active_jobs -= 1
+    async def record_log(**kwargs):
+        logged.append(kwargs)
 
     monkeypatch.setattr(
-        pdf_processing_queue,
-        "_processing_slots",
-        asyncio.BoundedSemaphore(1),
+        pdf_processing_queue.process_pdf_task,
+        "delay",
+        unavailable,
     )
-    monkeypatch.setattr(
-        pdf_processing_queue,
-        "_run_source_file_processing",
-        fake_process,
-    )
+    monkeypatch.setattr(pdf_processing_queue, "add_processing_log", record_log)
 
-    first_task = asyncio.create_task(
-        pdf_processing_queue._process_source_file_in_background(1)
-    )
-    await first_started.wait()
-    second_task = asyncio.create_task(
-        pdf_processing_queue._process_source_file_in_background(2)
-    )
-    await asyncio.sleep(0)
+    with pytest.raises(pdf_processing_queue.PdfProcessingQueueError):
+        await pdf_processing_queue.enqueue_pdf_processing(db, 42)
 
-    assert started == [1]
-    assert max_active_jobs == 1
-
-    release_first.set()
-    await asyncio.gather(first_task, second_task)
-
-    assert started == [1, 2]
-    assert max_active_jobs == 1
+    assert db.rollback_count == 1
+    assert stored_file.processing_status == "failed"
+    assert stored_file.processing_task_id is None
+    assert db.commit_count == 1
+    assert logged[0]["source_file_id"] == 42
+    assert logged[0]["step_name"] == "processing_enqueue_failed"
+    assert logged[0]["error_message"] == "redis unavailable"

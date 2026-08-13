@@ -10,6 +10,7 @@ const statusLabels: Record<string, string> = {
   queued: "В очереди",
   success: "Успешно",
   error: "Ошибка",
+  failed: "Ошибка",
   review: "На проверке",
   pending: "Ожидает",
   needs_review: "Требует проверки",

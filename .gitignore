@@ -1,5 +1,6 @@
 __pycache__/
 *.pyc
+.pytest_cache/
 .env
 .venv/
 venv/
@@ -7,4 +8,9 @@ venv/
 .vscode/
 node_modules/
 dist/
+.vite/
+*.tsbuildinfo
 postgres_data/
+backend/.codex-*-test*/
+backend/.test-tmp*/
+backend/uploads/

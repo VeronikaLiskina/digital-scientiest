@@ -31,6 +31,51 @@ async def test_create_source_file(client):
 
 
 @pytest.mark.asyncio
+async def test_process_source_file_returns_accepted_celery_task(
+    client,
+    monkeypatch,
+):
+    from app.services import pdf_processing_queue
+
+    create_response = await client.post(
+        "/api/source-files",
+        json={
+            "file_name": "queued.pdf",
+            "file_path": "uploads/queued.pdf",
+            "file_type": "application/pdf",
+            "processing_status": "new",
+        },
+    )
+    source_file_id = create_response.json()["id"]
+    delayed: list[int] = []
+
+    def delay(queued_source_file_id: int):
+        delayed.append(queued_source_file_id)
+        return type("TaskResult", (), {"id": "celery-task-api"})()
+
+    monkeypatch.setattr(pdf_processing_queue.process_pdf_task, "delay", delay)
+
+    response = await client.post(
+        f"/api/source-files/{source_file_id}/process/start"
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "task_id": "celery-task-api",
+        "source_file_id": source_file_id,
+        "status": "queued",
+    }
+    assert delayed == [source_file_id]
+
+    duplicate_response = await client.post(
+        f"/api/source-files/{source_file_id}/process/start"
+    )
+    assert duplicate_response.status_code == 202
+    assert duplicate_response.json() == response.json()
+    assert delayed == [source_file_id]
+
+
+@pytest.mark.asyncio
 async def test_get_source_files_with_status_filter(client):
     await client.post(
         "/api/source-files",

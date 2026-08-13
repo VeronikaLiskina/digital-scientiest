@@ -33,7 +33,8 @@
     color: $primary;
   }
 
-  &_error {
+  &_error,
+  &_failed {
     background: #fff0f0;
     color: $error;
   }

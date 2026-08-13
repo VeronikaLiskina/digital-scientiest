@@ -1,16 +1,10 @@
 ﻿import { API_BASE_URL, apiClient } from "./client";
 import type { SourceFile } from "../types/entities";
 
-export type ProcessPdfResult = {
-  source_file_id: number;
-  publication_id: number;
-  chunks_created: number;
-  status: string;
-};
-
 export type StartPdfProcessingResult = {
+  task_id: string | null;
   source_file_id: number;
-  status: "queued" | "processing" | string;
+  status: "queued" | "processing" | "completed" | "failed" | string;
 };
 
 export type CatalogMatch = {
@@ -77,7 +71,7 @@ export const sourceFilesApi = {
     apiClient.patch<SourceFile>(`/source-files/${id}`, data),
   delete: (id: number) => apiClient.delete<void>(`/source-files/${id}`),
   process: (sourceFileId: number) =>
-    apiClient.post<ProcessPdfResult>(
+    apiClient.post<StartPdfProcessingResult>(
       `/source-files/${sourceFileId}/process`,
       {},
     ),

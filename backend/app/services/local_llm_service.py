@@ -28,6 +28,38 @@ LANGUAGE_FAILURE_MESSAGES = {
     ),
 }
 
+RAG_ANSWER_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "blocks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 30,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "kind": {
+                        "type": "string",
+                        "enum": ["answer", "insufficient"],
+                    },
+                    "text": {
+                        "type": "string",
+                        "minLength": 1,
+                    },
+                    "source_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                },
+                "required": ["kind", "text", "source_ids"],
+                "additionalProperties": False,
+            },
+        }
+    },
+    "required": ["blocks"],
+    "additionalProperties": False,
+}
+
 
 class LocalLLMError(RuntimeError):
     """Base error for failures that can be safely shown by the assistant API."""
@@ -99,11 +131,15 @@ class LocalLLMService:
         prompt: str,
         *,
         expected_language: str = "ru",
+        structured_output: bool = False,
     ) -> str:
         return await self._generate_with_system_prompt(
             prompt,
             RAG_SYSTEM_PROMPT,
             expected_language=expected_language,
+            response_format=(
+                RAG_ANSWER_JSON_SCHEMA if structured_output else None
+            ),
         )
 
     async def generate_general_knowledge_answer(
@@ -116,6 +152,7 @@ class LocalLLMService:
             prompt,
             GENERAL_KNOWLEDGE_SYSTEM_PROMPT,
             expected_language=expected_language,
+            response_format=None,
         )
 
     async def _generate_with_system_prompt(
@@ -124,11 +161,16 @@ class LocalLLMService:
         system_prompt: str,
         *,
         expected_language: str,
+        response_format: str | dict | None,
     ) -> str:
         expected_language = (
             expected_language if expected_language in LANGUAGE_FAILURE_MESSAGES else "ru"
         )
-        answer = await self._request_ollama(prompt, system_prompt=system_prompt)
+        answer = await self._request_ollama(
+            prompt,
+            system_prompt=system_prompt,
+            response_format=response_format,
+        )
 
         if CHINESE_RE.search(answer):
             retry_prompt = (
@@ -140,6 +182,7 @@ class LocalLLMService:
             answer = await self._request_ollama(
                 retry_prompt,
                 system_prompt=system_prompt,
+                response_format=response_format,
             )
 
         if CHINESE_RE.search(answer):
@@ -147,7 +190,13 @@ class LocalLLMService:
 
         return answer
 
-    async def _request_ollama(self, prompt: str, *, system_prompt: str) -> str:
+    async def _request_ollama(
+        self,
+        prompt: str,
+        *,
+        system_prompt: str,
+        response_format: str | dict | None = None,
+    ) -> str:
         url = f"{self.base_url}/api/chat"
 
         payload = {
@@ -170,6 +219,8 @@ class LocalLLMService:
                 "repeat_penalty": 1.1,
             },
         }
+        if response_format is not None:
+            payload["format"] = response_format
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:

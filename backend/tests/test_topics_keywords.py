@@ -6,6 +6,9 @@ from tests.conftest import TestingSessionLocal
 
 
 class FakeEmbeddingService:
+    def embed_documents(self, texts):
+        return self.embed_texts(texts)
+
     def embed_texts(self, texts):
         return [
             [1.0, 0.0],
@@ -17,6 +20,9 @@ class FakeEmbeddingService:
         if "нейросет" in text.lower() or "модель" in text.lower():
             return [0.95, 0.05]
         return [0.1, 0.9]
+
+    def embed_query(self, text):
+        return self.embed_text(text)
 
 
 @pytest.mark.asyncio

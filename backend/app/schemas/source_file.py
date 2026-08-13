@@ -10,6 +10,7 @@ class SourceFileBase(BaseModel):
     has_figures: bool = False
     has_tables: bool = False
     processing_status: str = "new"
+    processing_task_id: str | None = None
     comment: str | None = None
 
 
@@ -26,6 +27,7 @@ class SourceFileUpdate(BaseModel):
     has_figures: bool | None = None
     has_tables: bool | None = None
     processing_status: str | None = None
+    processing_task_id: str | None = None
     comment: str | None = None
 
 
@@ -33,6 +35,12 @@ class SourceFileRead(SourceFileBase):
     id: int
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class PdfProcessingTaskRead(BaseModel):
+    task_id: str | None
+    source_file_id: int
+    status: str
 
 
 class CatalogMatchRead(BaseModel):

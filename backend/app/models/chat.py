@@ -43,6 +43,13 @@ class ChatMessage(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     sources: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    response_kind: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    catalog: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    answer_origin: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    answer_blocks: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

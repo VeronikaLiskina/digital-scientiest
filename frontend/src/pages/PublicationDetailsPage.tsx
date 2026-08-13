@@ -37,6 +37,9 @@ export function PublicationDetailsPage() {
   const [logs, setLogs] = useState<ProcessingLog[]>([]);
   const [error, setError] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
+  const [shouldPollProcessing, setShouldPollProcessing] = useState(
+    isAutomaticProcessing,
+  );
   const [processingMessage, setProcessingMessage] = useState("");
   const [editingChunkId, setEditingChunkId] = useState<number | null>(null);
   const [editingChunkText, setEditingChunkText] = useState("");
@@ -72,7 +75,7 @@ export function PublicationDetailsPage() {
   }, [id]);
 
   useEffect(() => {
-    if (!isAutomaticProcessing || !publication?.source_file_id) return;
+    if (!shouldPollProcessing || !publication?.source_file_id) return;
 
     setIsProcessing(true);
     setProcessingMessage("PDF сохранён. Чанки создаются в фоновом режиме…");
@@ -95,12 +98,14 @@ export function PublicationDetailsPage() {
 
       if (finished) {
         setIsProcessing(false);
+        setShouldPollProcessing(false);
         setProcessingMessage(`Обработка завершена. Создано чанков: ${updatedChunks.length}`);
         return true;
       }
 
       if (failed) {
         setIsProcessing(false);
+        setShouldPollProcessing(false);
         setProcessingMessage(failed.error_message || "Не удалось обработать PDF.");
         return true;
       }
@@ -122,7 +127,7 @@ export function PublicationDetailsPage() {
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
-  }, [isAutomaticProcessing, publication?.id, publication?.source_file_id]);
+  }, [shouldPollProcessing, publication?.id, publication?.source_file_id]);
 
   async function handleProcessPdf() {
     if (!publication?.source_file_id) {
@@ -131,7 +136,7 @@ export function PublicationDetailsPage() {
     }
 
     const confirmed = window.confirm(
-      "При повторной обработке PDF фрагменты будут пересозданы. Ручные изменения могут быть потеряны. Продолжить?",
+      "Поставить обработку PDF в фоновую очередь?",
     );
 
     if (!confirmed) {
@@ -143,23 +148,19 @@ export function PublicationDetailsPage() {
       setProcessingMessage("");
 
       const result = await sourceFilesApi.process(publication.source_file_id);
-      const [updatedChunks, updatedLogs] = await Promise.all([
-        documentChunksApi.getAll(publication.id),
-        processingLogsApi.getAll(publication.source_file_id),
-      ]);
+      if (result.status === "completed") {
+        setIsProcessing(false);
+        setProcessingMessage("PDF уже обработан; повторная задача не создавалась.");
+        return;
+      }
 
-      setChunks(updatedChunks);
-      setLogs(updatedLogs);
-
-      setProcessingMessage(
-        `Обработка завершена. Создано фрагментов: ${result.chunks_created}`,
-      );
+      setProcessingMessage("PDF поставлен в очередь фоновой обработки…");
+      setShouldPollProcessing(true);
     } catch (err) {
+      setIsProcessing(false);
       setProcessingMessage(
         err instanceof Error ? err.message : "Не удалось обработать PDF.",
       );
-    } finally {
-      setIsProcessing(false);
     }
   }
 

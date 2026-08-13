@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from sqlalchemy import select
 
@@ -6,6 +8,7 @@ from app.models.processing_log import ProcessingLog
 from app.models.publication import Publication
 from app.models.source_file import SourceFile
 from app.services import pdf_processing
+from app.api import assistant
 from app.services.pdf_processing import TextBlock, process_pdf_file
 from conftest import TestingSessionLocal
 
@@ -13,10 +16,16 @@ from conftest import TestingSessionLocal
 class FakeEmbeddingService:
     model_name = "fake-embedding-model"
 
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        return [[0.1] * 768 for _ in texts]
+
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
         return [[0.1] * 768 for _ in texts]
 
     def embed_text(self, text: str) -> list[float]:
+        return [0.1] * 768
+
+    def embed_query(self, text: str) -> list[float]:
         return [0.1] * 768
 
 
@@ -245,7 +254,7 @@ async def test_process_pdf_file_logs_processing_failure(monkeypatch, tmp_path):
             )
 
         updated_source_file = await session.get(SourceFile, source_file.id)
-        assert updated_source_file.processing_status == "error"
+        assert updated_source_file.processing_status == "failed"
         await session.refresh(publication)
         assert publication.status == "review"
 
@@ -271,3 +280,68 @@ async def test_process_pdf_file_logs_processing_failure(monkeypatch, tmp_path):
         log.step_name == "processing_finished" and log.status == "success"
         for log in logs
     )
+
+
+@pytest.mark.asyncio
+async def test_pdf_to_embeddings_to_hybrid_assistant_sources(monkeypatch, tmp_path):
+    pdf_path = tmp_path / "hybrid-publication.pdf"
+    pdf_path.write_bytes(b"%PDF-1.4")
+
+    monkeypatch.setattr(
+        pdf_processing,
+        "extract_text_blocks",
+        lambda _path: [
+            TextBlock(
+                page_number=1,
+                section_title="Results",
+                text="Содержание Fe2O3 в исследованной пробе составляет 14,7 %.",
+            )
+        ],
+    )
+
+    class AnsweringLLMService:
+        async def generate_answer(self, prompt: str, **_kwargs) -> str:
+            source_id = re.search(r"source_id: (chunk-\d+)", prompt).group(1)
+            return (
+                '{"blocks":[{"kind":"answer","text":"Содержание Fe2O3 '
+                'составляет 14,7 %.","source_ids":["'
+                + source_id
+                + '"]}]}'
+            )
+
+    monkeypatch.setattr(assistant, "LocalLLMService", AnsweringLLMService)
+
+    async with TestingSessionLocal() as session:
+        source_file = SourceFile(
+            file_name=pdf_path.name,
+            file_path=str(pdf_path),
+            file_type="application/pdf",
+            processing_status="new",
+        )
+        session.add(source_file)
+        await session.flush()
+        publication = Publication(
+            source_file_id=source_file.id,
+            title="Химический состав проб",
+            language="ru",
+            status="draft",
+        )
+        session.add(publication)
+        await session.commit()
+
+        await process_pdf_file(
+            db=session,
+            source_file_id=source_file.id,
+            embedding_service=FakeEmbeddingService(),
+        )
+        result = await assistant._answer_question(
+            question="Каково содержание Fe2O3 в исследованной пробе?",
+            limit=5,
+            min_similarity=0.55,
+            db=session,
+            embedding_service=FakeEmbeddingService(),
+        )
+
+    assert result["answer"] == "Содержание Fe2O3 составляет 14,7 %."
+    assert len(result["sources"]) == 1
+    assert result["sources"][0]["publication_id"] == publication.id

@@ -97,7 +97,7 @@ export function ReaderSemanticSearchPage() {
                   >
                     <div className="reader-assistant__result-header">
                       <Link
-                        to={`/publications/${result.publication_id}`}
+                        to={`/publications/${result.publication_id}?chunk=${result.chunk_id}`}
                         className="reader-assistant__source"
                       >
                         {result.publication_title ||

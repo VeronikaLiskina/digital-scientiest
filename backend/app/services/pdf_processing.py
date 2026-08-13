@@ -14,7 +14,9 @@ from app.models.source_file import SourceFile
 from app.services.embedding_service import EmbeddingService
 from app.services.pdf_text_extraction import PdfQuality, extract_pdf_pages
 from app.services.semantic_chunking import (
+    SemanticSource,
     clean_text_for_semantic_chunking,
+    split_sources_into_semantic_chunks,
     split_text_into_semantic_chunks,
 )
 
@@ -119,6 +121,12 @@ class ChunkPayload:
     chunk_text: str
     page_number: int
     chunk_index: int
+
+
+@dataclass
+class SectionBlocks:
+    section_title: str
+    blocks: list[TextBlock]
 
 
 class ExtractedTextBlocks(list[TextBlock]):
@@ -233,6 +241,8 @@ def clean_pdf_text(text: str) -> str:
         line = raw_line.strip()
 
         if not line:
+            if cleaned_lines and cleaned_lines[-1]:
+                cleaned_lines.append("")
             continue
 
         is_noise = any(
@@ -281,13 +291,18 @@ def split_page_into_blocks(
     - Methods/Results/Discussion/Conclusions отдельно.
     """
 
-    lines = [line.strip() for line in page_text.splitlines() if line.strip()]
+    lines = [line.strip() for line in page_text.splitlines()]
 
     blocks: list[TextBlock] = []
     buffer: list[str] = []
     section_title = current_section
 
     for line in lines:
+        if not line:
+            if buffer and buffer[-1]:
+                buffer.append("")
+            continue
+
         detected_section = detect_section_title(line)
 
         if detected_section is not None:
@@ -296,7 +311,7 @@ def split_page_into_blocks(
                     TextBlock(
                         page_number=page_number,
                         section_title=section_title,
-                        text="\n".join(buffer),
+                        text="\n".join(buffer).strip(),
                     )
                 )
 
@@ -313,7 +328,7 @@ def split_page_into_blocks(
             TextBlock(
                 page_number=page_number,
                 section_title=section_title,
-                text="\n".join(buffer),
+                text="\n".join(buffer).strip(),
             )
         )
 
@@ -431,12 +446,47 @@ def build_chunk_text(
     section_title: str,
     page_number: int,
     chunk_text: str,
+    *,
+    publication_title: str | None = None,
+    end_page_number: int | None = None,
 ) -> str:
-    return (
-        f"[section: {section_title}]\n"
-        f"[page: {page_number}]\n"
-        f"{chunk_text}"
+    end_page_number = end_page_number or page_number
+    pages = (
+        str(page_number)
+        if end_page_number == page_number
+        else f"{page_number}–{end_page_number}"
     )
+    metadata = []
+
+    if publication_title:
+        metadata.append(f"[publication: {publication_title}]")
+
+    metadata.extend(
+        [
+            f"[section: {section_title}]",
+            f"[pages: {pages}]",
+        ]
+    )
+    return "\n".join([*metadata, "", chunk_text]).strip()
+
+
+def group_blocks_by_section(text_blocks: list[TextBlock]) -> list[SectionBlocks]:
+    """Keep section boundaries while allowing a chunk to cross PDF pages."""
+
+    groups: list[SectionBlocks] = []
+
+    for block in text_blocks:
+        if groups and groups[-1].section_title == block.section_title:
+            groups[-1].blocks.append(block)
+        else:
+            groups.append(
+                SectionBlocks(
+                    section_title=block.section_title,
+                    blocks=[block],
+                )
+            )
+
+    return groups
 
 
 def make_chunk_fingerprint(text: str) -> str:
@@ -534,16 +584,44 @@ async def process_pdf_file(
         seen_fingerprints: set[str] = set()
         chunk_index = 0
 
-        for block in text_blocks:
-            chunks = await split_text_block_into_chunks(
-                block.text,
-                embedding_service,
-            )
+        for section_group in group_blocks_by_section(list(text_blocks)):
+            if len(section_group.blocks) == 1:
+                block = section_group.blocks[0]
+                raw_chunks = await split_text_block_into_chunks(
+                    block.text,
+                    embedding_service,
+                )
+                chunks_with_pages = [
+                    (raw_chunk, block.page_number, block.page_number)
+                    for raw_chunk in raw_chunks
+                ]
+            else:
+                semantic_chunks = await split_sources_into_semantic_chunks(
+                    [
+                        SemanticSource(
+                            text=block.text,
+                            page_number=block.page_number,
+                        )
+                        for block in section_group.blocks
+                    ],
+                    embedding_service,
+                )
+                first_page = section_group.blocks[0].page_number
+                chunks_with_pages = [
+                    (
+                        chunk.text,
+                        chunk.page_start or first_page,
+                        chunk.page_end or chunk.page_start or first_page,
+                    )
+                    for chunk in semantic_chunks
+                ]
 
-            for raw_chunk_text in chunks:
+            for raw_chunk_text, page_start, page_end in chunks_with_pages:
                 chunk_text = build_chunk_text(
-                    section_title=block.section_title,
-                    page_number=block.page_number,
+                    publication_title=publication.title,
+                    section_title=section_group.section_title,
+                    page_number=page_start,
+                    end_page_number=page_end,
                     chunk_text=raw_chunk_text,
                 )
                 chunk_text = clean_text_for_postgres(chunk_text)
@@ -561,7 +639,7 @@ async def process_pdf_file(
                 chunk_payloads.append(
                     ChunkPayload(
                         chunk_text=chunk_text,
-                        page_number=block.page_number,
+                        page_number=page_start,
                         chunk_index=chunk_index,
                     )
                 )
@@ -583,7 +661,7 @@ async def process_pdf_file(
         chunk_texts = [chunk.chunk_text for chunk in chunk_payloads]
 
         embeddings = await asyncio.to_thread(
-            embedding_service.embed_texts,
+            embedding_service.embed_documents,
             chunk_texts,
         )
 
@@ -614,7 +692,7 @@ async def process_pdf_file(
         db.add_all(new_chunks)
         await db.commit()
 
-        source_file.processing_status = "processed"
+        source_file.processing_status = "completed"
         publication.status = "processed"
         await db.commit()
 
@@ -631,7 +709,7 @@ async def process_pdf_file(
             "source_file_id": source_file_id,
             "publication_id": publication.id,
             "chunks_created": len(new_chunks),
-            "status": "processed",
+            "status": "completed",
         }
 
     except Exception as exc:
@@ -640,7 +718,7 @@ async def process_pdf_file(
         source_file = await db.get(SourceFile, source_file_id)
 
         if source_file is not None:
-            source_file.processing_status = "error"
+            source_file.processing_status = "failed"
 
         if publication is not None:
             publication = await db.get(Publication, publication.id)

@@ -1,0 +1,42 @@
+{
+  "chunks": [
+    {"id": "carbonatite-age", "text": "U-Pb dating of zircon constrains emplacement of the carbonatite complex to 386 ± 4 Ma."},
+    {"id": "carbonatite-composition", "text": "The carbonatites consist mainly of calcite, dolomite, apatite and magnetite with elevated rare-earth elements."},
+    {"id": "basalt-setting", "text": "Trace-element ratios indicate that the basalts formed in a continental rift setting rather than at a mid-ocean ridge."},
+    {"id": "basalt-temperature", "text": "Two-pyroxene thermometry gives crystallization temperatures between 980 and 1040 degrees Celsius."},
+    {"id": "granite-method", "text": "Major elements were measured by X-ray fluorescence, while trace elements were determined using ICP-MS."},
+    {"id": "granite-source", "text": "Sr-Nd isotope data suggest that the granitic magma was produced by partial melting of ancient continental crust."},
+    {"id": "ore-minerals", "text": "The principal ore minerals are chalcopyrite, pyrite and bornite; molybdenite occurs only as an accessory phase."},
+    {"id": "ore-reserves", "text": "The measured and indicated resource contains 42 million tonnes of ore at an average copper grade of 0.74 percent."},
+    {"id": "earthquake-depth", "text": "Most earthquakes in the sequence occurred at depths of 8 to 14 km, with the mainshock hypocenter at 11 km."},
+    {"id": "earthquake-magnitude", "text": "The moment magnitude of the mainshock was Mw 6.2 and the largest aftershock reached Mw 5.1."},
+    {"id": "lake-salinity", "text": "Lake-water salinity increased from 18 to 27 grams per liter during the 2010–2020 observation period."},
+    {"id": "lake-cause", "text": "The salinity rise is attributed to reduced river inflow and enhanced evaporation during prolonged drought."},
+    {"id": "glacier-rate", "text": "Satellite images show that the glacier terminus retreated by an average of 23 meters per year between 1990 and 2020."},
+    {"id": "glacier-method", "text": "Glacier boundaries were mapped from cloud-free Landsat scenes and checked against differential GPS surveys."},
+    {"id": "soil-contamination", "text": "Lead concentrations in soils within one kilometer of the smelter exceed the regional background by a factor of twelve."},
+    {"id": "soil-remediation", "text": "The proposed remediation combines removal of the most polluted topsoil with phytostabilization using metal-tolerant grasses."},
+    {"id": "permafrost-depth", "text": "The active layer above permafrost thickened from 0.9 to 1.3 meters over the last fifteen years."},
+    {"id": "permafrost-driver", "text": "Active-layer thickening correlates with rising summer air temperature and earlier disappearance of seasonal snow."},
+    {"id": "groundwater-flow", "text": "Hydraulic-head measurements show groundwater flow from the northeastern recharge area toward the river valley."},
+    {"id": "groundwater-age", "text": "Tritium and carbon-14 data indicate a mixture of modern recharge and groundwater older than six thousand years."},
+    {"id": "volcano-gas", "text": "SO2 emissions rose sharply three days before the eruption, whereas CO2 flux remained nearly constant."},
+    {"id": "volcano-warning", "text": "The eruption was preceded by volcanic tremor, summit inflation and a rapid increase in sulfur-dioxide emissions."},
+    {"id": "sediment-provenance", "text": "Detrital-zircon ages identify the northern craton as the dominant source of the basin sediments."},
+    {"id": "sediment-environment", "text": "Cross-bedded sandstone and channel-lag conglomerate record deposition by a braided river system."}
+  ],
+  "questions": [
+    {"id": "q01", "text": "Каков возраст внедрения карбонатитового комплекса?", "relevant_chunk_ids": ["carbonatite-age"]},
+    {"id": "q02", "text": "В какой геодинамической обстановке сформировались базальты?", "relevant_chunk_ids": ["basalt-setting"]},
+    {"id": "q03", "text": "Какими методами определяли главные и редкие элементы в гранитах?", "relevant_chunk_ids": ["granite-method"]},
+    {"id": "q04", "text": "Какие сульфиды являются главными рудными минералами?", "relevant_chunk_ids": ["ore-minerals"]},
+    {"id": "q05", "text": "На какой глубине находился гипоцентр главного землетрясения?", "relevant_chunk_ids": ["earthquake-depth"]},
+    {"id": "q06", "text": "Почему выросла минерализация воды озера?", "relevant_chunk_ids": ["lake-cause"]},
+    {"id": "q07", "text": "С какой средней скоростью отступал ледник?", "relevant_chunk_ids": ["glacier-rate"]},
+    {"id": "q08", "text": "Как предлагается очищать загрязнённую свинцом почву?", "relevant_chunk_ids": ["soil-remediation"]},
+    {"id": "q09", "text": "Что связано с увеличением мощности сезонно-талого слоя?", "relevant_chunk_ids": ["permafrost-driver"]},
+    {"id": "q10", "text": "Куда направлен поток подземных вод от области питания?", "relevant_chunk_ids": ["groundwater-flow"]},
+    {"id": "q11", "text": "Какие признаки наблюдались перед извержением вулкана?", "relevant_chunk_ids": ["volcano-gas", "volcano-warning"]},
+    {"id": "q12", "text": "Что было главным источником обломочного материала бассейна?", "relevant_chunk_ids": ["sediment-provenance"]}
+  ]
+}

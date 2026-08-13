@@ -8,7 +8,7 @@ export type PublicationImportItem = {
   publication_id?: number | null;
   original_file_name: string;
   status: "processing" | "needs_review" | "saved" | "duplicate" | "error" | "skipped" | string;
-  processing_status?: "queued" | "processing" | "processed" | "error" | string | null;
+  processing_status?: "queued" | "processing" | "completed" | "failed" | string | null;
   error_message?: string | null;
   extracted_metadata?: ExtractedPublicationMetadata | null;
   title?: string | null;

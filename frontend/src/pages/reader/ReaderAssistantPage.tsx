@@ -3,37 +3,55 @@ import { Link } from "react-router-dom";
 
 import {
   assistantApi,
-  type AssistantSource,
+  type AssistantAnswerBlock,
   type ChatDetail,
   type ChatMessage,
   type ChatSummary,
 } from "../../api/assistantApi";
 import { ApiError } from "../../api/client";
+import { AssistantSources, sourceLink } from "./AssistantSources";
 
-function sourceLink(source: AssistantSource) {
-  return `/publications/${source.publication_id}`;
+function answerBlocks(message: ChatMessage): AssistantAnswerBlock[] {
+  if (message.answer_blocks.length > 0) return message.answer_blocks;
+  return [{ text: message.content, source_ids: [] }];
 }
 
-function rankedPublicationSources(sources: AssistantSource[]) {
-  const bestByPublication = new Map<number, AssistantSource>();
+function sourceById(message: ChatMessage, sourceId: string) {
+  return message.sources.find((source) => source.source_id === sourceId);
+}
 
-  sources.forEach((source) => {
-    const current = bestByPublication.get(source.publication_id);
-    if (!current || source.similarity > current.similarity) {
-      bestByPublication.set(source.publication_id, source);
-    }
-  });
+function renderAnswerBlock(
+  message: ChatMessage,
+  block: AssistantAnswerBlock,
+  blockIndex: number,
+) {
+  return (
+    <p className="chat-message__answer-block" key={`${message.id}-${blockIndex}`}>
+      <span>{block.text}</span>
+      {block.source_ids.map((sourceId) => {
+        const source = sourceById(message, sourceId);
+        if (!source) return null;
 
-  return Array.from(bestByPublication.values()).sort(
-    (left, right) => right.similarity - left.similarity,
+        const sourceNumber = message.sources.findIndex(
+          (item) => item.source_id === sourceId,
+        ) + 1;
+
+        return (
+          <Link
+            className="chat-message__inline-source"
+            to={sourceLink(source)}
+            target="_blank"
+            rel="noopener noreferrer"
+            title={`${source.publication_title}, фрагмент ${source.chunk_index}`}
+            aria-label={`Источник ${sourceNumber}: ${source.publication_title}, фрагмент ${source.chunk_index}`}
+            key={sourceId}
+          >
+            [{sourceNumber}]
+          </Link>
+        );
+      })}
+    </p>
   );
-}
-
-function similarityPercent(similarity: number) {
-  return similarity.toLocaleString("ru-RU", {
-    style: "percent",
-    maximumFractionDigits: 1,
-  });
 }
 
 interface ChatError {
@@ -170,6 +188,9 @@ export function ReaderAssistantPage() {
         role: "user",
         content,
         sources: [],
+        answer_blocks: [],
+        answer_origin: null,
+        catalog: null,
         created_at: new Date().toISOString(),
       };
       setActiveChat({ ...chat, messages: [...chat.messages, temporaryMessage] });
@@ -268,29 +289,34 @@ export function ReaderAssistantPage() {
                   <span className="chat-message__role">
                     {message.role === "user" ? "Вы" : "Ассистент"}
                   </span>
-                  <p>{message.content}</p>
-                  {message.sources.length > 0 && (
-                    <div className="chat-message__sources">
-                      {rankedPublicationSources(message.sources).map((source) => (
-                        <Link
-                          to={sourceLink(source)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          key={source.publication_id}
-                        >
-                          {source.publication_title || `Публикация #${source.publication_id}`}
-                          <span className="chat-message__similarity">
-                            {similarityPercent(source.similarity)}
+                  {message.role === "assistant"
+                    ? answerBlocks(message).map((block, blockIndex) =>
+                        renderAnswerBlock(message, block, blockIndex),
+                      )
+                    : <p>{message.content}</p>}
+                  {message.role === "assistant" && (
+                    <AssistantSources sources={message.sources} />
+                  )}
+                  {message.catalog && message.catalog.items.length > 0 && (
+                    <div className="chat-message__catalog">
+                      {message.catalog.items.map((item) => (
+                        <Link to={item.publication_url} key={item.publication_id}>
+                          <strong>{item.title}</strong>
+                          <span>
+                            {[item.year, item.authors.join(", ")]
+                              .filter(Boolean)
+                              .join(" · ")}
                           </span>
+                          {item.description && <span>{item.description}</span>}
                         </Link>
                       ))}
                     </div>
                   )}
-                  {message.role === "assistant" && message.sources.length === 0 && (
-                    <div className="chat-message__notice">
-                      <span aria-hidden="true">i</span>
+                  {message.role === "assistant" && message.answer_origin === "external" && (
+                    <div className="chat-message__notice chat-message__notice--external" role="alert">
+                      <span aria-hidden="true">!</span>
                       <div>
-                        <strong>Фрагменты не найдены</strong>
+                        <strong>Информация из внешнего источника</strong>
                         <p>Ответ основан на общих знаниях, а не на материалах архива.</p>
                       </div>
                     </div>

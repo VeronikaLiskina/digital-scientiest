@@ -1,10 +1,15 @@
 import re
+from dataclasses import dataclass
 from functools import lru_cache
 
 import pymorphy3
 
 
 TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+")
+FIGURE_OR_TABLE_CAPTION_RE = re.compile(
+    r"^\s*(?:рис(?:\.|унок\b)|fig(?:\.|ure\b)|табл(?:\.|ица\b)|table\b)",
+    re.IGNORECASE,
+)
 
 STOPWORDS = {
     "а",
@@ -24,8 +29,12 @@ STOPWORDS = {
     "или",
     "их",
     "как",
+    "каков",
+    "каковой",
     "какие",
     "какой",
+    "когда",
+    "который",
     "к",
     "ко",
     "на",
@@ -37,6 +46,7 @@ STOPWORDS = {
     "при",
     "про",
     "публикация",
+    "почему",
     "материал",
     "источник",
     "информация",
@@ -49,6 +59,8 @@ STOPWORDS = {
     "со",
     "у",
     "что",
+    "сколько",
+    "зачем",
     "это",
     "the",
     "a",
@@ -68,15 +80,47 @@ STOPWORDS = {
     "with",
 }
 
-MIN_DIRECT_TOKEN_COVERAGE = 0.25
-MIN_SHORT_QUERY_PARTIAL_SIMILARITY = 0.72
-MIN_LONG_QUERY_PARTIAL_SIMILARITY = 0.70
-HIGH_SEMANTIC_SIMILARITY = 0.78
-MIN_SEMANTIC_SUPPLEMENT_SIMILARITY = 0.70
-MIN_CROSS_LANGUAGE_SIMILARITY = 0.65
-CROSS_LANGUAGE_RANK_BOOST = 0.03
+LOW_INFORMATION_TOKENS = {
+    "геологический",
+    "строение",
+    "территория",
+    "регион",
+    "участок",
+    "рассматривать",
+    "описать",
+    "характеристика",
+    "особенность",
+    "данные",
+    "результат",
+    "general",
+    "geological",
+    "geology",
+    "region",
+    "study",
+}
+LOW_INFORMATION_TOKEN_WEIGHT = 0.35
+MIN_SHORT_QUERY_COVERAGE = 1.0
+MIN_LONG_QUERY_COVERAGE = 0.55
+MIN_STRONG_SEMANTIC_SIMILARITY = 0.78
+MIN_STRONG_SEMANTIC_COVERAGE = 0.45
+MAX_SCORE_GAP = 0.12
+MAX_SIMILARITY_GAP = 0.12
+MAX_ANSWER_SOURCES = 3
+MIN_CROSS_LANGUAGE_SIMILARITY = 0.80
+MIN_CROSS_LANGUAGE_MARGIN = 0.04
 MIN_SHARED_PREFIX_LENGTH = 6
 MIN_SHARED_PREFIX_RATIO = 0.75
+
+
+@dataclass(frozen=True, slots=True)
+class SourceRelevanceScore:
+    chunk: dict
+    similarity: float
+    text_coverage: float
+    title_coverage: float
+    matched_text_tokens: frozenset[str]
+    score: float
+    is_relevant: bool
 
 
 @lru_cache(maxsize=1)
@@ -105,77 +149,6 @@ def extract_relevance_tokens(text: str) -> set[str]:
         tokens.add(token)
 
     return tokens
-
-
-def _chunk_text(chunk: dict) -> str:
-    return " ".join(
-        [
-            str(chunk.get("publication_title") or ""),
-            str(chunk.get("text") or ""),
-        ]
-    )
-
-
-def _dominant_script(text: str) -> str | None:
-    cyrillic_count = len(re.findall(r"[А-Яа-яЁё]", text))
-    latin_count = len(re.findall(r"[A-Za-z]", text))
-
-    if cyrillic_count > latin_count:
-        return "cyrillic"
-    if latin_count > cyrillic_count:
-        return "latin"
-    return None
-
-
-def _is_cross_language_source(question: str, chunk: dict) -> bool:
-    question_script = _dominant_script(question)
-    source_script = _dominant_script(
-        str(chunk.get("text") or chunk.get("publication_title") or "")
-    )
-
-    return (
-        question_script is not None
-        and source_script is not None
-        and question_script != source_script
-    )
-
-
-def _candidate_rank_score(question: str, chunk: dict) -> float:
-    similarity = float(chunk.get("similarity") or 0)
-    if (
-        similarity >= MIN_CROSS_LANGUAGE_SIMILARITY
-        and _is_cross_language_source(question, chunk)
-    ):
-        return similarity + CROSS_LANGUAGE_RANK_BOOST
-    return similarity
-
-
-def _promote_cross_language_candidates(
-    question: str,
-    candidates: list[dict],
-) -> list[dict]:
-    """Promote only cross-language matches while preserving all other ordering."""
-    ranked: list[dict] = []
-
-    for chunk in candidates:
-        if not (
-            float(chunk.get("similarity") or 0)
-            >= MIN_CROSS_LANGUAGE_SIMILARITY
-            and _is_cross_language_source(question, chunk)
-        ):
-            ranked.append(chunk)
-            continue
-
-        rank_score = _candidate_rank_score(question, chunk)
-        insert_at = len(ranked)
-        for index, existing in enumerate(ranked):
-            if _candidate_rank_score(question, existing) < rank_score:
-                insert_at = index
-                break
-
-        ranked.insert(insert_at, chunk)
-
-    return ranked
 
 
 def _tokens_match(left: str, right: str) -> bool:
@@ -215,34 +188,97 @@ def _matching_question_tokens(
     }
 
 
-def is_relevant_source(question: str, chunk: dict) -> bool:
+def _weighted_token_coverage(
+    question_tokens: set[str],
+    matched_tokens: set[str],
+) -> float:
+    total_weight = sum(
+        LOW_INFORMATION_TOKEN_WEIGHT if token in LOW_INFORMATION_TOKENS else 1.0
+        for token in question_tokens
+    )
+    matched_weight = sum(
+        LOW_INFORMATION_TOKEN_WEIGHT if token in LOW_INFORMATION_TOKENS else 1.0
+        for token in matched_tokens
+    )
+    return matched_weight / total_weight if total_weight else 0.0
+
+
+def score_source_relevance(question: str, chunk: dict) -> SourceRelevanceScore:
     similarity = float(chunk.get("similarity") or 0)
-
-    if similarity >= HIGH_SEMANTIC_SIMILARITY:
-        return True
-
+    source_text = str(chunk.get("text") or "")
     question_tokens = extract_relevance_tokens(question)
 
-    if not question_tokens:
-        return similarity >= 0.7
-
-    source_tokens = extract_relevance_tokens(_chunk_text(chunk))
-    overlap = _matching_question_tokens(question_tokens, source_tokens)
-    coverage = len(overlap) / len(question_tokens)
-
-    if not overlap:
-        return False
+    # Подписи к рисункам и таблицам часто оказываются близки вопросу по эмбеддингу
+    # и названию публикации, но сами по себе не содержат достаточного ответа.
+    is_caption = FIGURE_OR_TABLE_CAPTION_RE.match(source_text) is not None
+    text_tokens = extract_relevance_tokens(source_text)
+    title_tokens = extract_relevance_tokens(
+        str(chunk.get("publication_title") or "")
+    )
+    text_overlap = _matching_question_tokens(question_tokens, text_tokens)
+    title_overlap = _matching_question_tokens(question_tokens, title_tokens)
+    text_coverage = _weighted_token_coverage(question_tokens, text_overlap)
+    title_coverage = _weighted_token_coverage(question_tokens, title_overlap)
+    specific_question_tokens = question_tokens - LOW_INFORMATION_TOKENS
+    matched_specific_tokens = text_overlap & specific_question_tokens
 
     if len(question_tokens) <= 2:
-        if coverage >= 1:
-            return True
+        required_coverage = MIN_SHORT_QUERY_COVERAGE
+    elif similarity >= MIN_STRONG_SEMANTIC_SIMILARITY:
+        required_coverage = MIN_STRONG_SEMANTIC_COVERAGE
+    else:
+        required_coverage = MIN_LONG_QUERY_COVERAGE
 
-        return similarity >= MIN_SHORT_QUERY_PARTIAL_SIMILARITY
+    generic_high_confidence_match = bool(
+        not specific_question_tokens
+        and text_overlap
+        and similarity >= 0.85
+    )
+    is_relevant = bool(
+        question_tokens
+        and text_overlap
+        and not is_caption
+        and (
+            text_coverage >= required_coverage
+            or generic_high_confidence_match
+        )
+        and (
+            not specific_question_tokens
+            or matched_specific_tokens
+        )
+    )
+    combined_score = (
+        text_coverage * 0.70
+        + similarity * 0.25
+        + title_coverage * 0.05
+    )
+    return SourceRelevanceScore(
+        chunk=chunk,
+        similarity=similarity,
+        text_coverage=text_coverage,
+        title_coverage=title_coverage,
+        matched_text_tokens=frozenset(text_overlap),
+        score=combined_score,
+        is_relevant=is_relevant,
+    )
 
-    if coverage >= MIN_DIRECT_TOKEN_COVERAGE:
-        return True
 
-    return similarity >= MIN_LONG_QUERY_PARTIAL_SIMILARITY
+def is_relevant_source(question: str, chunk: dict) -> bool:
+    return score_source_relevance(question, chunk).is_relevant
+
+
+def _is_cross_language_pair(question: str, source_text: str) -> bool:
+    question_cyrillic = len(re.findall(r"[А-Яа-яЁё]", question))
+    question_latin = len(re.findall(r"[A-Za-z]", question))
+    source_cyrillic = len(re.findall(r"[А-Яа-яЁё]", source_text))
+    source_latin = len(re.findall(r"[A-Za-z]", source_text))
+    return (
+        question_cyrillic > max(3, question_latin * 2)
+        and source_latin > max(12, source_cyrillic * 2)
+    ) or (
+        question_latin > max(3, question_cyrillic * 2)
+        and source_cyrillic > max(12, source_latin * 2)
+    )
 
 
 def filter_relevant_sources(
@@ -250,11 +286,52 @@ def filter_relevant_sources(
     chunks: list[dict],
     limit: int,
 ) -> list[dict]:
-    relevant_chunks = [
-        chunk for chunk in chunks if is_relevant_source(question, chunk)
-    ]
+    scored_chunks = [score_source_relevance(question, chunk) for chunk in chunks]
+    relevant_scores = [score for score in scored_chunks if score.is_relevant]
 
-    return relevant_chunks[:limit]
+    if not relevant_scores:
+        semantic_candidates = sorted(
+            (
+                score
+                for score in scored_chunks
+                if not FIGURE_OR_TABLE_CAPTION_RE.match(
+                    str(score.chunk.get("text") or "")
+                )
+                and _is_cross_language_pair(
+                    question,
+                    str(score.chunk.get("text") or ""),
+                )
+            ),
+            key=lambda item: -item.similarity,
+        )
+        if semantic_candidates:
+            best_semantic = semantic_candidates[0]
+            next_similarity = (
+                semantic_candidates[1].similarity
+                if len(semantic_candidates) > 1
+                else 0.0
+            )
+            if (
+                best_semantic.similarity >= MIN_CROSS_LANGUAGE_SIMILARITY
+                and best_semantic.similarity - next_similarity
+                >= MIN_CROSS_LANGUAGE_MARGIN
+            ):
+                return [best_semantic.chunk]
+
+        return []
+
+    relevant_scores.sort(
+        key=lambda item: (-item.score, -item.similarity)
+    )
+    best_score = relevant_scores[0].score
+    best_similarity = relevant_scores[0].similarity
+    close_scores = [
+        score
+        for score in relevant_scores
+        if score.score >= best_score - MAX_SCORE_GAP
+        and score.similarity >= best_similarity - MAX_SIMILARITY_GAP
+    ]
+    return [score.chunk for score in close_scores[:limit]]
 
 
 def diversify_chunks_by_publication(
@@ -303,24 +380,5 @@ def select_answer_sources(
         chunks=chunks,
         limit=len(chunks),
     )
-
-    if relevant_chunks:
-        relevant_chunk_ids = {id(chunk) for chunk in relevant_chunks}
-        candidates = [
-            chunk
-            for chunk in chunks
-            if id(chunk) in relevant_chunk_ids
-            or float(chunk.get("similarity") or 0)
-            >= MIN_SEMANTIC_SUPPLEMENT_SIMILARITY
-            or (
-                float(chunk.get("similarity") or 0)
-                >= MIN_CROSS_LANGUAGE_SIMILARITY
-                and _is_cross_language_source(question, chunk)
-            )
-        ]
-    else:
-        candidates = chunks
-
-    candidates = _promote_cross_language_candidates(question, candidates)
-
-    return diversify_chunks_by_publication(candidates, limit)
+    effective_limit = min(limit, MAX_ANSWER_SOURCES)
+    return diversify_chunks_by_publication(relevant_chunks, effective_limit)
