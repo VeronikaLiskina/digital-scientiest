@@ -89,9 +89,34 @@ def test_structured_answer_allows_empty_sources_for_insufficient_information():
     ]
 
 
-def test_detail_level_defaults_to_eighty_percent_for_both_request_types():
-    assert AssistantAskRequest(question="Что найдено?").detail_percent == 80
-    assert ChatMessageCreate(content="Что найдено?").detail_percent == 80
+def test_structured_answer_rejects_overcitation_in_one_semantic_block():
+    with pytest.raises(OllamaGenerationError, match="слишком много ссылок"):
+        parse_structured_rag_answer(
+            (
+                '{"blocks":[{"kind":"answer","text":"Один конкретный факт.",'
+                '"source_ids":["chunk-1","chunk-2","chunk-3","chunk-4"]}]}'
+            ),
+            allowed_source_ids={"chunk-1", "chunk-2", "chunk-3", "chunk-4"},
+        )
+
+
+def test_detail_level_defaults_to_full_source_coverage_for_both_request_types():
+    assert AssistantAskRequest(question="Что найдено?").detail_percent == 100
+    assert ChatMessageCreate(content="Что найдено?").detail_percent == 100
+
+
+@pytest.mark.parametrize(
+    "request_type, text_field",
+    [
+        (AssistantAskRequest, "question"),
+        (ChatMessageCreate, "content"),
+    ],
+)
+def test_assistant_request_accepts_at_most_six_sources(request_type, text_field):
+    assert request_type(**{text_field: "Что найдено?", "limit": 6}).limit == 6
+
+    with pytest.raises(ValidationError):
+        request_type(**{text_field: "Что найдено?", "limit": 7})
 
 
 @pytest.mark.parametrize(

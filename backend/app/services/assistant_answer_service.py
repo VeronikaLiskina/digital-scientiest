@@ -3,7 +3,7 @@ import math
 import re
 from typing import Any
 
-from app.services.local_llm_service import OllamaGenerationError
+from app.services.local_llm_service import LLMGenerationError
 
 
 JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
@@ -52,6 +52,7 @@ SERVICE_MARKER_RE = re.compile(
 MAX_ANSWER_BLOCKS = 30
 MAX_BLOCK_TEXT_LENGTH = 5000
 MAX_TOTAL_ANSWER_LENGTH = 10000
+MAX_SOURCE_IDS_PER_BLOCK = 3
 
 
 def _strip_optional_json_fence(raw_answer: str) -> str:
@@ -68,12 +69,12 @@ def parse_structured_rag_answer(
     try:
         payload = json.loads(_strip_optional_json_fence(raw_answer))
     except (TypeError, json.JSONDecodeError) as exc:
-        raise OllamaGenerationError(
+        raise LLMGenerationError(
             "Модель вернула ответ не в структурированном JSON-формате"
         ) from exc
 
     if not isinstance(payload, dict) or set(payload) != {"blocks"}:
-        raise OllamaGenerationError("Структура ответа модели содержит недопустимые поля")
+        raise LLMGenerationError("Структура ответа модели содержит недопустимые поля")
 
     raw_blocks = payload["blocks"]
     if (
@@ -81,7 +82,7 @@ def parse_structured_rag_answer(
         or not raw_blocks
         or len(raw_blocks) > MAX_ANSWER_BLOCKS
     ):
-        raise OllamaGenerationError("Модель вернула некорректный список блоков ответа")
+        raise LLMGenerationError("Модель вернула некорректный список блоков ответа")
 
     blocks: list[dict[str, Any]] = []
     total_text_length = 0
@@ -92,32 +93,37 @@ def parse_structured_rag_answer(
             "text",
             "source_ids",
         }:
-            raise OllamaGenerationError("Блок ответа модели содержит недопустимые поля")
+            raise LLMGenerationError("Блок ответа модели содержит недопустимые поля")
 
         kind = raw_block["kind"]
         text = raw_block["text"]
         raw_source_ids = raw_block["source_ids"]
         if kind not in {"answer", "insufficient"}:
-            raise OllamaGenerationError("Блок ответа модели содержит неизвестный тип")
+            raise LLMGenerationError("Блок ответа модели содержит неизвестный тип")
         if not isinstance(text, str) or not text.strip():
-            raise OllamaGenerationError("Модель вернула пустой текстовый блок")
+            raise LLMGenerationError("Модель вернула пустой текстовый блок")
         text = text.strip()
         if len(text) > MAX_BLOCK_TEXT_LENGTH:
-            raise OllamaGenerationError("Текстовый блок модели превышает допустимый размер")
+            raise LLMGenerationError("Текстовый блок модели превышает допустимый размер")
 
         if not isinstance(raw_source_ids, list):
-            raise OllamaGenerationError("source_ids блока ответа должен быть списком")
+            raise LLMGenerationError("source_ids блока ответа должен быть списком")
         if kind == "answer" and not raw_source_ids:
-            raise OllamaGenerationError("Содержательный блок модели не содержит source_id")
+            raise LLMGenerationError("Содержательный блок модели не содержит source_id")
+        if kind == "answer" and len(set(raw_source_ids)) > MAX_SOURCE_IDS_PER_BLOCK:
+            raise LLMGenerationError(
+                "Смысловой блок содержит слишком много ссылок на источники: "
+                f"допустимо не более {MAX_SOURCE_IDS_PER_BLOCK}"
+            )
         if kind == "insufficient" and raw_source_ids:
-            raise OllamaGenerationError(
+            raise LLMGenerationError(
                 "Блок о недостатке информации не должен содержать source_id"
             )
 
         source_ids: list[str] = []
         for source_id in raw_source_ids:
             if not isinstance(source_id, str) or source_id not in allowed_source_ids:
-                raise OllamaGenerationError(
+                raise LLMGenerationError(
                     "Модель сослалась на несуществующий или недопустимый source_id"
                 )
             if source_id not in source_ids:
@@ -125,7 +131,7 @@ def parse_structured_rag_answer(
 
         total_text_length += len(text)
         if total_text_length > MAX_TOTAL_ANSWER_LENGTH:
-            raise OllamaGenerationError("Ответ модели превышает допустимый размер")
+            raise LLMGenerationError("Ответ модели превышает допустимый размер")
 
         blocks.append({"text": text, "source_ids": source_ids})
 
@@ -150,18 +156,18 @@ def validate_human_answer(
         or REPEATED_NOISE_RE.search(text)
         or REPEATED_ALPHANUMERIC_RE.search(text)
     ):
-        raise OllamaGenerationError("Текст ответа содержит повреждённые или лишние символы")
+        raise LLMGenerationError("Текст ответа содержит повреждённые или лишние символы")
 
     if SERVICE_MARKER_RE.search(text):
-        raise OllamaGenerationError("Текст ответа содержит служебные данные RAG")
+        raise LLMGenerationError("Текст ответа содержит служебные данные RAG")
 
     if MIXED_SCRIPT_WORD_RE.search(text):
-        raise OllamaGenerationError(
+        raise LLMGenerationError(
             "Текст ответа содержит OCR-слово со смешением кириллицы и латиницы"
         )
 
     if not allow_bibliography and BIBLIOGRAPHIC_ANSWER_RE.search(text):
-        raise OllamaGenerationError(
+        raise LLMGenerationError(
             "Ответ содержит не запрошенный пользователем список литературы"
         )
 
@@ -169,29 +175,29 @@ def validate_human_answer(
         UNNECESSARY_PREAMBLE_RE.search(str(block["text"]))
         for block in blocks
     ):
-        raise OllamaGenerationError("Текст ответа содержит лишнее служебное вступление")
+        raise LLMGenerationError("Текст ответа содержит лишнее служебное вступление")
 
     letters_count = sum(character.isalpha() for character in text)
     visible_count = sum(not character.isspace() for character in text)
     if letters_count < 3 or letters_count < visible_count * 0.35:
-        raise OllamaGenerationError("Текст ответа не похож на связный человеческий ответ")
+        raise LLMGenerationError("Текст ответа не похож на связный человеческий ответ")
 
     cyrillic_count = len(CYRILLIC_RE.findall(text))
     latin_count = len(LATIN_RE.findall(text))
 
     if expected_language == "ru":
         if cyrillic_count == 0 or latin_count > max(12, cyrillic_count * 0.2):
-            raise OllamaGenerationError("Модель вернула ответ не на русском языке")
+            raise LLMGenerationError("Модель вернула ответ не на русском языке")
     elif expected_language == "en":
         if latin_count == 0 or cyrillic_count > max(12, latin_count * 0.2):
-            raise OllamaGenerationError("Модель вернула ответ не на английском языке")
+            raise LLMGenerationError("Модель вернула ответ не на английском языке")
 
 
 def validate_source_coverage(
     blocks: list[dict[str, Any]],
     *,
     allowed_source_ids: set[str],
-    detail_percent: int = 80,
+    detail_percent: int = 100,
 ) -> None:
     """Require a substantive answer to cover the requested share of RAG sources."""
 
@@ -215,15 +221,19 @@ def validate_source_coverage(
         len(allowed_source_ids) * detail_percent / 100
     )
     if len(used_source_ids) < required_source_count:
-        raise OllamaGenerationError(
+        raise LLMGenerationError(
             "Ответ использует недостаточно релевантных источников: "
             f"требуется не менее {detail_percent}% "
             f"({required_source_count} из {len(allowed_source_ids)})"
         )
 
 
-def single_answer_block(text: str) -> list[dict[str, Any]]:
-    return [{"text": text, "source_ids": []}]
+def single_answer_block(
+    text: str,
+    *,
+    source_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    return [{"text": text, "source_ids": list(source_ids or [])}]
 
 
 def question_requests_bibliography(question: str) -> bool:

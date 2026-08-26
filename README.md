@@ -51,6 +51,57 @@ Set-Location backend
 
 Celery Beat проекту не требуется.
 
+## Выбор LLM-провайдера
+
+Интерактивный RAG-ассистент и автоматический перевод поискового запроса могут
+работать через локальную Ollama, Groq или гибрид обоих провайдеров. По умолчанию
+остаётся локальный режим:
+
+```env
+LLM_PROVIDER=ollama
+OLLAMA_MODEL=gemma4:12b
+```
+
+Для Groq создайте новый ключ в Groq Console и сохраните его только в `.env`:
+
+```env
+LLM_PROVIDER=groq
+GROQ_API_KEY=gsk_...
+GROQ_MODEL=openai/gpt-oss-120b
+GROQ_REASONING_EFFORT=medium
+GROQ_MAX_COMPLETION_TOKENS=1400
+```
+
+Гибридный режим сначала запускает Ollama. Если локальная модель не ответила за
+заданный интервал, Groq получает тот же prompt и тот же RAG-контекст. Используется
+первый успешно завершившийся ответ; при ошибке или исчерпании квоты Groq система
+продолжает ждать уже выполняющийся локальный запрос:
+
+```env
+LLM_PROVIDER=hybrid
+HYBRID_FALLBACK_DELAY_SECONDS=35
+```
+
+До переключения всего backend проверьте новый ключ отдельным коротким запросом:
+
+```powershell
+docker compose run --rm --build -e LLM_PROVIDER=groq backend `
+  python -m scripts.check_groq_connection
+```
+
+После смены провайдера пересоздайте backend:
+
+```powershell
+docker compose up -d --build --force-recreate backend
+```
+
+В Groq передаются тот же RAG prompt и те же фрагменты публикаций, что и в
+Ollama. Встроенные browser search, code execution и другие tools не включаются,
+поэтому модель не получает внешние источники и сохраняется честность benchmark.
+Для возврата к локальной модели достаточно снова указать
+`LLM_PROVIDER=ollama` и пересоздать backend. AI-анализ метаданных публикаций —
+отдельный внутренний процесс; он продолжает использовать Ollama.
+
 ## Проверка
 
 ```powershell
@@ -99,7 +150,17 @@ Set-Location backend
 
 Поиск ассистента объединяет 30 результатов pgvector и 30 результатов
 PostgreSQL Full Text Search через Reciprocal Rank Fusion (`k=60`). После
-дедупликации в проверку релевантности передаются лучшие 20 чанков.
+дедупликации в строгую проверку релевантности передаются лучшие 20 чанков.
+Прошедшие её фрагменты оценивает cross-encoder
+`BAAI/bge-reranker-v2-m3`; в контекст LLM попадают не более 8 результатов с
+нормализованной оценкой не ниже `RERANKER_MIN_SCORE`. Если ни один фрагмент не
+прошёл любую из двух проверок, ассистент возвращает «недостаточно информации»
+без вызова LLM.
+
+Модель reranker настраивается переменными `RERANKER_MODEL_NAME`,
+`RERANKER_BATCH_SIZE`, `RERANKER_MAX_LENGTH`, `RERANKER_MIN_SCORE` и
+`RERANKER_TOP_K`. При первом содержательном запросе модель скачивается в общий
+Hugging Face cache; пересоздавать embeddings после её смены не нужно.
 
 FTS-индекс создаётся миграцией и обновляется PostgreSQL автоматически при
 изменении `chunk_text`:
@@ -110,4 +171,21 @@ Set-Location backend
 ```
 
 Для диагностики каждого запроса в backend-логе выводятся `vector_results`,
-`full_text_results`, `rrf_results` и `final_selected_chunks`.
+`full_text_results`, `rrf_results`, `reranked_chunks` и
+`final_selected_chunks`.
+
+## Evaluation production retrieval
+
+В `backend/evaluation/retrieval_dataset.json` находится набор из 30 вручную
+проверенных вопросов к реальным `document_chunks`: semantic, exact,
+cross-language, no-answer и short/ambiguous. Один запуск сравнивает hybrid
+RRF, relevance gate и reranker по Recall@5, Recall@10, MRR, answerability
+accuracy, false positives и false negatives:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -m scripts.evaluate_retrieval `
+  --output evaluation/results.json
+```
+
+Для baseline без загрузки reranker-модели добавьте `--skip-reranker`.

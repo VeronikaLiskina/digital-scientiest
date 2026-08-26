@@ -1,0 +1,644 @@
+{
+  "schema_version": 1,
+  "benchmark": "digital-scientist-final-five-option-comparison",
+  "generated_at": "2026-08-26T19:37:00.120585+08:00",
+  "questions_compared": 18,
+  "generation_attempts_per_option": 16,
+  "frozen_context_verified": true,
+  "frozen_prompt_verified": true,
+  "hybrid_fallback_delay_seconds": 35,
+  "hybrid_local_wins": 14,
+  "hybrid_groq_wins": 2,
+  "hybrid_quality_delta_vs_gemma": 0.22,
+  "hybrid_max_latency_reduction_percent_vs_gemma": 46.51,
+  "model_summary": [
+    {
+      "model_key": "qwen35",
+      "model": "qwen3.5:9b",
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "average_score": 10.22,
+      "technically_valid": 14,
+      "generation_attempts": 16,
+      "technical_success_percent": 87.5,
+      "mean_success_sec": 9.78,
+      "warm_median_sec": 9.2,
+      "max_success_sec": 20.41,
+      "questions_gte_12": 10,
+      "questions_lte_7": 5,
+      "role": "Более качественный Qwen, но нестабилен технически",
+      "quality_rank": 4,
+      "speed_rank": 3
+    },
+    {
+      "model_key": "gemma",
+      "model": "gemma4:12b",
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "average_score": 11.06,
+      "technically_valid": 16,
+      "generation_attempts": 16,
+      "technical_success_percent": 100.0,
+      "mean_success_sec": 23.29,
+      "warm_median_sec": 13.47,
+      "max_success_sec": 91.23,
+      "questions_gte_12": 10,
+      "questions_lte_7": 3,
+      "role": "Лучший полностью локальный вариант",
+      "quality_rank": 2,
+      "speed_rank": 4
+    },
+    {
+      "model_key": "qwen25",
+      "model": "qwen2.5:7b",
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "average_score": 8.67,
+      "technically_valid": 14,
+      "generation_attempts": 16,
+      "technical_success_percent": 87.5,
+      "mean_success_sec": 7.25,
+      "warm_median_sec": 4.21,
+      "max_success_sec": 31.89,
+      "questions_gte_12": 5,
+      "questions_lte_7": 7,
+      "role": "Быстрый локальный, но качество недостаточно",
+      "quality_rank": 5,
+      "speed_rank": 2
+    },
+    {
+      "model_key": "groq",
+      "model": "openai/gpt-oss-120b",
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "average_score": 10.61,
+      "technically_valid": 16,
+      "generation_attempts": 16,
+      "technical_success_percent": 100.0,
+      "mean_success_sec": 4.14,
+      "warm_median_sec": 3.9,
+      "max_success_sec": 9.3,
+      "questions_gte_12": 8,
+      "questions_lte_7": 3,
+      "role": "Самый быстрый, но внешний API и ниже качество",
+      "quality_rank": 3,
+      "speed_rank": 1
+    },
+    {
+      "model_key": "hybrid",
+      "model": "gemma4:12b + openai/gpt-oss-120b",
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "average_score": 11.28,
+      "technically_valid": 16,
+      "generation_attempts": 16,
+      "technical_success_percent": 100.0,
+      "mean_success_sec": 21.55,
+      "warm_median_sec": 17.98,
+      "max_success_sec": 48.8,
+      "questions_gte_12": 11,
+      "questions_lte_7": 3,
+      "role": "Рекомендуемый режим: локально, Groq после 35 секунд",
+      "quality_rank": 1,
+      "speed_rank": 5
+    }
+  ],
+  "difficulty_scores": [
+    {
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "difficulty_order": 1,
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "average_score": 10.5,
+      "question_count": 4
+    },
+    {
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "difficulty_order": 2,
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "average_score": 10.0,
+      "question_count": 5
+    },
+    {
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "difficulty_order": 3,
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "average_score": 11.2,
+      "question_count": 5
+    },
+    {
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "difficulty_order": 4,
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "average_score": 9.0,
+      "question_count": 4
+    },
+    {
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "difficulty_order": 1,
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "average_score": 12.75,
+      "question_count": 4
+    },
+    {
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "difficulty_order": 2,
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "average_score": 11.6,
+      "question_count": 5
+    },
+    {
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "difficulty_order": 3,
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "average_score": 10.6,
+      "question_count": 5
+    },
+    {
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "difficulty_order": 4,
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "average_score": 9.25,
+      "question_count": 4
+    },
+    {
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "difficulty_order": 1,
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "average_score": 13.0,
+      "question_count": 4
+    },
+    {
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "difficulty_order": 2,
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "average_score": 7.0,
+      "question_count": 5
+    },
+    {
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "difficulty_order": 3,
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "average_score": 9.0,
+      "question_count": 5
+    },
+    {
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "difficulty_order": 4,
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "average_score": 6.0,
+      "question_count": 4
+    },
+    {
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "difficulty_order": 1,
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "average_score": 12.0,
+      "question_count": 4
+    },
+    {
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "difficulty_order": 2,
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "average_score": 11.2,
+      "question_count": 5
+    },
+    {
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "difficulty_order": 3,
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "average_score": 10.4,
+      "question_count": 5
+    },
+    {
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "difficulty_order": 4,
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "average_score": 8.75,
+      "question_count": 4
+    },
+    {
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "difficulty_order": 1,
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "average_score": 12.75,
+      "question_count": 4
+    },
+    {
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "difficulty_order": 2,
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "average_score": 11.6,
+      "question_count": 5
+    },
+    {
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "difficulty_order": 3,
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "average_score": 11.4,
+      "question_count": 5
+    },
+    {
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "difficulty_order": 4,
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "average_score": 9.25,
+      "question_count": 4
+    }
+  ],
+  "latency_comparison": [
+    {
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "metric": "Тёплая медиана",
+      "metric_order": 1,
+      "seconds": 9.2
+    },
+    {
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "metric": "Среднее успешных",
+      "metric_order": 2,
+      "seconds": 9.78
+    },
+    {
+      "model_display": "Qwen 3.5 9B",
+      "model_order": 1,
+      "metric": "Максимум",
+      "metric_order": 3,
+      "seconds": 20.41
+    },
+    {
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "metric": "Тёплая медиана",
+      "metric_order": 1,
+      "seconds": 13.47
+    },
+    {
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "metric": "Среднее успешных",
+      "metric_order": 2,
+      "seconds": 23.29
+    },
+    {
+      "model_display": "Gemma 4 12B",
+      "model_order": 2,
+      "metric": "Максимум",
+      "metric_order": 3,
+      "seconds": 91.23
+    },
+    {
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "metric": "Тёплая медиана",
+      "metric_order": 1,
+      "seconds": 4.21
+    },
+    {
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "metric": "Среднее успешных",
+      "metric_order": 2,
+      "seconds": 7.25
+    },
+    {
+      "model_display": "Qwen 2.5 7B",
+      "model_order": 3,
+      "metric": "Максимум",
+      "metric_order": 3,
+      "seconds": 31.89
+    },
+    {
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "metric": "Тёплая медиана",
+      "metric_order": 1,
+      "seconds": 3.9
+    },
+    {
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "metric": "Среднее успешных",
+      "metric_order": 2,
+      "seconds": 4.14
+    },
+    {
+      "model_display": "GPT-OSS 120B / Groq",
+      "model_order": 4,
+      "metric": "Максимум",
+      "metric_order": 3,
+      "seconds": 9.3
+    },
+    {
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "metric": "Тёплая медиана",
+      "metric_order": 1,
+      "seconds": 17.98
+    },
+    {
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "metric": "Среднее успешных",
+      "metric_order": 2,
+      "seconds": 21.55
+    },
+    {
+      "model_display": "Hybrid: Gemma + Groq",
+      "model_order": 5,
+      "metric": "Максимум",
+      "metric_order": 3,
+      "seconds": 48.8
+    }
+  ],
+  "question_results": [
+    {
+      "question_id": "Q01",
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "chunks_count": 5,
+      "qwen35_score": 2,
+      "gemma_score": 14,
+      "qwen25_score": 14,
+      "groq_score": 12,
+      "hybrid_score": 14,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 24.72
+    },
+    {
+      "question_id": "Q02",
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "chunks_count": 6,
+      "qwen35_score": 14,
+      "gemma_score": 14,
+      "qwen25_score": 13,
+      "groq_score": 14,
+      "hybrid_score": 14,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 20.96
+    },
+    {
+      "question_id": "Q03",
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "chunks_count": 6,
+      "qwen35_score": 12,
+      "gemma_score": 9,
+      "qwen25_score": 11,
+      "groq_score": 9,
+      "hybrid_score": 9,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 16.34
+    },
+    {
+      "question_id": "Q04",
+      "difficulty": "easy",
+      "difficulty_display": "Лёгкие",
+      "chunks_count": 6,
+      "qwen35_score": 14,
+      "gemma_score": 14,
+      "qwen25_score": 14,
+      "groq_score": 13,
+      "hybrid_score": 14,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 16.25
+    },
+    {
+      "question_id": "Q05",
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "chunks_count": 6,
+      "qwen35_score": 14,
+      "gemma_score": 13,
+      "qwen25_score": 6,
+      "groq_score": 14,
+      "hybrid_score": 13,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 15.69
+    },
+    {
+      "question_id": "Q06",
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "chunks_count": 3,
+      "qwen35_score": 10,
+      "gemma_score": 10,
+      "qwen25_score": 5,
+      "groq_score": 10,
+      "hybrid_score": 10,
+      "hybrid_provider": "Groq fallback",
+      "hybrid_time_sec": 48.8
+    },
+    {
+      "question_id": "Q07",
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "chunks_count": 3,
+      "qwen35_score": 11,
+      "gemma_score": 12,
+      "qwen25_score": 2,
+      "groq_score": 9,
+      "hybrid_score": 12,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 17.98
+    },
+    {
+      "question_id": "Q08",
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "chunks_count": 1,
+      "qwen35_score": 13,
+      "gemma_score": 13,
+      "qwen25_score": 13,
+      "groq_score": 13,
+      "hybrid_score": 13,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 12.47
+    },
+    {
+      "question_id": "Q09",
+      "difficulty": "medium",
+      "difficulty_display": "Средние",
+      "chunks_count": 6,
+      "qwen35_score": 2,
+      "gemma_score": 10,
+      "qwen25_score": 9,
+      "groq_score": 10,
+      "hybrid_score": 10,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 21.67
+    },
+    {
+      "question_id": "Q10",
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "chunks_count": 6,
+      "qwen35_score": 13,
+      "gemma_score": 11,
+      "qwen25_score": 6,
+      "groq_score": 11,
+      "hybrid_score": 14,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 28.89
+    },
+    {
+      "question_id": "Q11",
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "chunks_count": 0,
+      "qwen35_score": 5,
+      "gemma_score": 5,
+      "qwen25_score": 5,
+      "groq_score": 5,
+      "hybrid_score": 5,
+      "hybrid_provider": "Не вызывалась",
+      "hybrid_time_sec": 0.0
+    },
+    {
+      "question_id": "Q12",
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "chunks_count": 1,
+      "qwen35_score": 13,
+      "gemma_score": 13,
+      "qwen25_score": 10,
+      "groq_score": 13,
+      "hybrid_score": 13,
+      "hybrid_provider": "Groq fallback",
+      "hybrid_time_sec": 39.31
+    },
+    {
+      "question_id": "Q13",
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "chunks_count": 6,
+      "qwen35_score": 11,
+      "gemma_score": 11,
+      "qwen25_score": 11,
+      "groq_score": 10,
+      "hybrid_score": 11,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 19.89
+    },
+    {
+      "question_id": "Q14",
+      "difficulty": "hard",
+      "difficulty_display": "Сложные",
+      "chunks_count": 4,
+      "qwen35_score": 14,
+      "gemma_score": 13,
+      "qwen25_score": 13,
+      "groq_score": 13,
+      "hybrid_score": 14,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 22.47
+    },
+    {
+      "question_id": "Q15",
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "chunks_count": 1,
+      "qwen35_score": 6,
+      "gemma_score": 6,
+      "qwen25_score": 2,
+      "groq_score": 6,
+      "hybrid_score": 6,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 8.37
+    },
+    {
+      "question_id": "Q16",
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "chunks_count": 0,
+      "qwen35_score": 5,
+      "gemma_score": 5,
+      "qwen25_score": 5,
+      "groq_score": 5,
+      "hybrid_score": 5,
+      "hybrid_provider": "Не вызывалась",
+      "hybrid_time_sec": 0.0
+    },
+    {
+      "question_id": "Q17",
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "chunks_count": 4,
+      "qwen35_score": 13,
+      "gemma_score": 13,
+      "qwen25_score": 8,
+      "groq_score": 11,
+      "hybrid_score": 13,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 16.15
+    },
+    {
+      "question_id": "Q18",
+      "difficulty": "very_hard",
+      "difficulty_display": "Очень сложные",
+      "chunks_count": 6,
+      "qwen35_score": 12,
+      "gemma_score": 13,
+      "qwen25_score": 9,
+      "groq_score": 13,
+      "hybrid_score": 13,
+      "hybrid_provider": "Gemma локально",
+      "hybrid_time_sec": 14.79
+    }
+  ],
+  "validation": {
+    "status": "share_with_caveats",
+    "retrieval_limited_questions": [
+      "Q11",
+      "Q15",
+      "Q16"
+    ],
+    "no_context_questions": [
+      "Q11",
+      "Q16"
+    ],
+    "note": "Все варианты получили одинаковые вопросы, retrieved chunk IDs, замороженный контекст и первый generation prompt. Размер выборки мал, а генерации стохастичны."
+  }
+}

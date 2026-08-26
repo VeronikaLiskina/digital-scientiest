@@ -300,6 +300,14 @@ async def test_pdf_to_embeddings_to_hybrid_assistant_sources(monkeypatch, tmp_pa
     )
 
     class AnsweringLLMService:
+        async def translate_search_query(
+            self,
+            _query: str,
+            *,
+            source_language: str,
+        ) -> str:
+            return ""
+
         async def generate_answer(self, prompt: str, **_kwargs) -> str:
             source_id = re.search(r"source_id: (chunk-\d+)", prompt).group(1)
             return (
@@ -308,6 +316,13 @@ async def test_pdf_to_embeddings_to_hybrid_assistant_sources(monkeypatch, tmp_pa
                 + source_id
                 + '"]}]}'
             )
+
+    class AcceptingReranker:
+        def rerank(self, _question, chunks, *, limit):
+            return [
+                {**chunk, "reranker_score": 0.99}
+                for chunk in chunks[:limit]
+            ]
 
     monkeypatch.setattr(assistant, "LocalLLMService", AnsweringLLMService)
 
@@ -340,6 +355,7 @@ async def test_pdf_to_embeddings_to_hybrid_assistant_sources(monkeypatch, tmp_pa
             min_similarity=0.55,
             db=session,
             embedding_service=FakeEmbeddingService(),
+            reranker_service=AcceptingReranker(),
         )
 
     assert result["answer"] == "Содержание Fe2O3 составляет 14,7 %."

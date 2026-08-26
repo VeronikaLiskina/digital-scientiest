@@ -6,9 +6,9 @@ from pydantic import BaseModel, Field
 
 class AssistantAskRequest(BaseModel):
     question: str = Field(..., min_length=2)
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=5, ge=1, le=6)
     min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
-    detail_percent: int = Field(default=80, ge=80, le=100)
+    detail_percent: int = Field(default=100, ge=80, le=100)
 
 
 class AssistantSource(BaseModel):
@@ -60,9 +60,9 @@ class ChatCreate(BaseModel):
 
 class ChatMessageCreate(BaseModel):
     content: str = Field(..., min_length=2, max_length=10000)
-    limit: int = Field(default=5, ge=1, le=10)
+    limit: int = Field(default=5, ge=1, le=6)
     min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
-    detail_percent: int = Field(default=80, ge=80, le=100)
+    detail_percent: int = Field(default=100, ge=80, le=100)
 
 
 class ChatMessageRead(BaseModel):

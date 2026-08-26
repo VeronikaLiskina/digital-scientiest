@@ -10,9 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.database import get_db
-from app.dependencies import get_embedding_service
+from app.dependencies import get_embedding_service, get_reranker_service
 from app.models.chat import Chat, ChatMessage
-from app.repositories.semantic_search_repository import SemanticSearchRepository
+from app.repositories.semantic_search_repository import (
+    HYBRID_TOP_K,
+    SemanticSearchRepository,
+)
 from app.schemas.assistant import (
     AssistantAskRequest,
     AssistantAskResponse,
@@ -30,18 +33,23 @@ from app.services.assistant_answer_service import (
     question_requests_bibliography,
     single_answer_block,
     validate_human_answer,
-    validate_source_coverage,
 )
 from app.services.local_llm_service import (
+    LLMConfigurationError,
+    LLMGenerationError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
     LocalLLMError,
     LocalLLMService,
-    OllamaGenerationError,
-    OllamaTimeoutError,
-    OllamaUnavailableError,
     detect_question_language,
 )
 from app.services.prompt_builder import build_rag_context, build_rag_prompt
-from app.services.source_relevance import select_answer_sources
+from app.services.reranker_service import RerankerError, RerankerService
+from app.services.source_relevance import (
+    diversify_chunks_by_publication,
+    filter_relevant_sources,
+)
 from app.services.publication_query_service import (
     DESCRIPTION_UNAVAILABLE,
     build_described_publication_catalog_answer,
@@ -63,10 +71,30 @@ CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 
 
 def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
-    if isinstance(exc, OllamaTimeoutError):
+    if isinstance(exc, LLMConfigurationError):
+        status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = {
+            "code": "llm_configuration_error",
+            "title": "Ассистент не настроен",
+            "message": (
+                "Проверьте выбранный LLM-провайдер, API-ключ и доступ к модели."
+            ),
+            "retryable": False,
+        }
+    elif isinstance(exc, LLMRateLimitError):
+        status_code = status.HTTP_429_TOO_MANY_REQUESTS
+        detail = {
+            "code": "llm_rate_limited",
+            "title": "Временный лимит запросов",
+            "message": (
+                "Квота облачной модели временно исчерпана. Повторите запрос позже."
+            ),
+            "retryable": True,
+        }
+    elif isinstance(exc, LLMTimeoutError):
         status_code = status.HTTP_504_GATEWAY_TIMEOUT
         detail = {
-            "code": "ollama_timeout",
+            "code": "llm_timeout",
             "title": "Ответ занял слишком много времени",
             "message": (
                 "Модель не успела завершить ответ. Попробуйте повторить запрос "
@@ -74,18 +102,17 @@ def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
             ),
             "retryable": True,
         }
-    elif isinstance(exc, OllamaUnavailableError):
+    elif isinstance(exc, LLMUnavailableError):
         status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         detail = {
-            "code": "ollama_unavailable",
+            "code": "llm_unavailable",
             "title": "Ассистент временно недоступен",
             "message": (
-                "Не удалось подключиться к локальной модели. Проверьте, что "
-                "Ollama запущена, и повторите запрос."
+                "Не удалось подключиться к выбранной модели. Повторите запрос позже."
             ),
             "retryable": True,
         }
-    elif isinstance(exc, OllamaGenerationError):
+    elif isinstance(exc, LLMGenerationError):
         status_code = status.HTTP_502_BAD_GATEWAY
         detail = {
             "code": "generation_failed",
@@ -120,6 +147,21 @@ def _general_knowledge_disclaimer(question: str) -> str:
     )
 
 
+def _reranker_http_error(exc: RerankerError) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail={
+            "code": "reranker_unavailable",
+            "title": "Проверка источников временно недоступна",
+            "message": (
+                "Не удалось безопасно проверить найденные фрагменты. "
+                "Попробуйте повторить запрос позже."
+            ),
+            "retryable": True,
+        },
+    )
+
+
 def _insufficient_information_answer(question: str) -> str:
     if CYRILLIC_RE.search(question):
         return (
@@ -136,18 +178,42 @@ def _source_id(chunk_id: int) -> str:
     return f"chunk-{int(chunk_id)}"
 
 
+async def _translate_search_query(
+    question: str,
+    *,
+    source_language: str,
+) -> str:
+    return await LocalLLMService().translate_search_query(
+        question,
+        source_language=source_language,
+    )
+
+
 def _unique_ranked_chunks(chunks: list[dict]) -> list[dict]:
     best_by_chunk_id: dict[int, dict] = {}
 
     for chunk in chunks:
         chunk_id = int(chunk["chunk_id"])
         current = best_by_chunk_id.get(chunk_id)
-        if current is None or float(chunk["similarity"]) > float(current["similarity"]):
+        chunk_rank = (
+            float(chunk.get("reranker_score") or 0.0),
+            float(chunk["similarity"]),
+        )
+        current_rank = (
+            (
+                float(current.get("reranker_score") or 0.0),
+                float(current["similarity"]),
+            )
+            if current is not None
+            else None
+        )
+        if current_rank is None or chunk_rank > current_rank:
             best_by_chunk_id[chunk_id] = chunk
 
     return sorted(
         best_by_chunk_id.values(),
         key=lambda chunk: (
+            -float(chunk.get("reranker_score") or 0.0),
             -float(chunk["similarity"]),
             int(chunk["publication_id"]),
             int(chunk["chunk_id"]),
@@ -328,8 +394,9 @@ async def _answer_question(
     min_similarity: float,
     db: AsyncSession,
     embedding_service: EmbeddingService | None = None,
+    reranker_service: RerankerService | None = None,
     conversation: str | None = None,
-    detail_percent: int = 80,
+    detail_percent: int = 100,
 ) -> dict[str, Any]:
     database_answer = await _answer_database_question(
         question=question,
@@ -354,13 +421,79 @@ async def _answer_question(
         query_embedding=query_embedding,
         embedding_model=embedding_service.model_name,
         query_text=question,
-        limit=20,
+        limit=HYBRID_TOP_K,
         min_similarity=min_similarity,
     )
-    chunks = select_answer_sources(
-        question=question,
-        chunks=candidate_chunks,
-        limit=limit,
+
+    async def retrieve_verified_chunks(
+        search_question: str,
+        candidates: list[dict] | None = None,
+    ) -> list[dict]:
+        nonlocal reranker_service
+
+        if candidates is None:
+            search_embedding = await asyncio.to_thread(
+                embedding_service.embed_query,
+                search_question,
+            )
+            candidates = await repository.search_chunks(
+                query_embedding=search_embedding,
+                embedding_model=embedding_service.model_name,
+                query_text=search_question,
+                limit=HYBRID_TOP_K,
+                min_similarity=min_similarity,
+            )
+
+        relevant = filter_relevant_sources(
+            question=search_question,
+            chunks=candidates,
+            limit=len(candidates),
+        )
+        if not relevant:
+            return []
+
+        if reranker_service is None:
+            reranker_service = await asyncio.to_thread(get_reranker_service)
+
+        reranked = await asyncio.to_thread(
+            reranker_service.rerank,
+            search_question,
+            relevant,
+            limit=limit,
+        )
+        return diversify_chunks_by_publication(reranked, limit)
+
+    chunks = await retrieve_verified_chunks(question, candidate_chunks)
+    translated_chunks: list[dict] = []
+    try:
+        translated_query = await _translate_search_query(
+            question,
+            source_language=expected_language,
+        )
+    except LocalLLMError as exc:
+        logger.warning("Bilingual search query translation failed: %s", exc)
+    else:
+        if (
+            translated_query.strip()
+            and translated_query.casefold() != question.casefold()
+        ):
+            logger.info("Running retrieval with automatically translated query")
+            translated_chunks = await retrieve_verified_chunks(translated_query)
+
+    chunks = diversify_chunks_by_publication(
+        _unique_ranked_chunks([*chunks, *translated_chunks]),
+        limit,
+    )
+
+    logger.info(
+        "reranked_chunks=%s",
+        [
+            {
+                "chunk_id": chunk.get("chunk_id"),
+                "score": round(float(chunk.get("reranker_score") or 0.0), 4),
+            }
+            for chunk in chunks
+        ],
     )
 
     if not chunks:
@@ -415,16 +548,11 @@ async def _answer_question(
             expected_language=expected_language,
             allow_bibliography=allow_bibliography,
         )
-        validate_source_coverage(
-            blocks,
-            allowed_source_ids=allowed_source_ids,
-            detail_percent=detail_percent,
-        )
         return blocks
 
     try:
         answer_blocks = await generate_and_validate(prompt)
-    except OllamaGenerationError as first_exc:
+    except LLMGenerationError as first_exc:
         logger.warning(
             "Structured assistant answer rejected on first attempt: %s",
             first_exc,
@@ -437,51 +565,19 @@ async def _answer_question(
             "ID, JSON в поле text, метаданных поиска и случайных символов. Соблюдай "
             "заданный JSON-формат всего ответа. Не копируй OCR-слова со смешением "
             "кириллицы и латиницы и не перечисляй авторов или литературу, если вопрос "
-            f"не просит об этом. Используй не менее {detail_percent}% переданных "
-            "релевантных источников, если даёшь содержательный ответ."
+            "не просит об этом. Делай короткие смысловые блоки и ставь после каждого "
+            "только 1–3 source_id, непосредственно подтверждающих его факты. Не нужно "
+            "использовать все источники из контекста."
         )
         try:
             answer_blocks = await generate_and_validate(retry_prompt)
-        except OllamaGenerationError as second_exc:
-            logger.warning(
+        except LLMGenerationError as second_exc:
+            logger.error(
                 "Structured assistant answer rejected on second attempt: %s; "
-                "trying a plain-text answer without source links",
+                "refusing to return an answer without precise inline citations",
                 second_exc,
             )
-            plain_prompt = build_rag_prompt(
-                question,
-                context,
-                conversation,
-                structured_output=False,
-                detail_percent=detail_percent,
-            )
-            try:
-                plain_answer = await llm_service.generate_answer(
-                    plain_prompt,
-                    expected_language=expected_language,
-                    structured_output=False,
-                )
-                answer_blocks = single_answer_block(plain_answer.strip())
-                validate_human_answer(
-                    answer_blocks,
-                    expected_language=expected_language,
-                    allow_bibliography=allow_bibliography,
-                )
-            except OllamaGenerationError as fallback_exc:
-                logger.error(
-                    "Plain-text assistant fallback also failed: %s",
-                    fallback_exc,
-                )
-                raise fallback_exc from second_exc
-
-            return {
-                "question": question,
-                "answer": plain_answer.strip(),
-                "sources": [],
-                "answer_blocks": answer_blocks,
-                "answer_origin": "internal",
-                "catalog": None,
-            }
+            raise second_exc from first_exc
 
     source_by_id = {
         source["source_id"]: source
@@ -521,6 +617,8 @@ async def ask_assistant(
         )
     except LocalLLMError as exc:
         raise _assistant_http_error(exc) from exc
+    except RerankerError as exc:
+        raise _reranker_http_error(exc) from exc
 
 
 @router.get("/chats", response_model=list[ChatRead])
@@ -590,6 +688,9 @@ async def send_chat_message(
     except LocalLLMError as exc:
         await db.rollback()
         raise _assistant_http_error(exc) from exc
+    except RerankerError as exc:
+        await db.rollback()
+        raise _reranker_http_error(exc) from exc
 
     assistant_message = ChatMessage(
         chat_id=chat.id,

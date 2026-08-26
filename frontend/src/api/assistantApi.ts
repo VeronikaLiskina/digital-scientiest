@@ -80,9 +80,9 @@ export const assistantApi = {
   sendMessage: (chatId: number, content: string) =>
     rootApiClient.post<ChatReply>(`/assistant/chats/${chatId}/messages`, {
       content,
-      limit: 10,
+      limit: 6,
       min_similarity: 0.55,
-      detail_percent: 80,
+      detail_percent: 100,
     }),
   deleteChat: (chatId: number) =>
     rootApiClient.delete<void>(`/assistant/chats/${chatId}`),

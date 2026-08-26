@@ -3,7 +3,8 @@ import pytest
 
 from app.api import assistant
 from app.schemas.assistant import AssistantAskResponse
-from app.services import local_llm_service
+from app.services.llm import ollama as ollama_provider
+from app.services.llm.ollama import OllamaLLMProvider
 from app.services.local_llm_service import (
     CHINESE_RE,
     GENERAL_KNOWLEDGE_SYSTEM_PROMPT,
@@ -13,6 +14,7 @@ from app.services.local_llm_service import (
     OllamaUnavailableError,
     RAG_ANSWER_JSON_SCHEMA,
     RAG_SYSTEM_PROMPT,
+    SEARCH_QUERY_JSON_SCHEMA,
     detect_question_language,
 )
 from app.services.prompt_builder import (
@@ -22,7 +24,9 @@ from app.services.prompt_builder import (
     clean_rag_chunk_text,
 )
 from app.services.source_relevance import (
+    build_entity_intent_reranker_query,
     diversify_chunks_by_publication,
+    extract_relevance_tokens,
     filter_relevant_sources,
     select_answer_sources,
 )
@@ -40,7 +44,7 @@ class StubLLMService(LocalLLMService):
         self.requests: list[tuple[str, str]] = []
         self.response_formats: list[str | dict | None] = []
 
-    async def _request_ollama(
+    async def _request_provider(
         self,
         prompt: str,
         *,
@@ -62,6 +66,31 @@ class StubEmbeddingService:
         return [0.1, 0.2]
 
 
+class StubRerankerService:
+    def rerank(self, _question: str, chunks: list[dict], *, limit: int):
+        return [
+            {**chunk, "reranker_score": 0.99}
+            for chunk in chunks[:limit]
+        ]
+
+
+@pytest.fixture(autouse=True)
+def use_stub_reranker(monkeypatch):
+    monkeypatch.setattr(
+        assistant,
+        "get_reranker_service",
+        lambda: StubRerankerService(),
+    )
+
+
+@pytest.fixture(autouse=True)
+def disable_automatic_query_translation(monkeypatch):
+    async def no_translation(_question: str, *, source_language: str) -> str:
+        return ""
+
+    monkeypatch.setattr(assistant, "_translate_search_query", no_translation)
+
+
 class StubHTTPClient:
     def __init__(self, result) -> None:
         self.result = result
@@ -78,6 +107,17 @@ class StubHTTPClient:
         return self.result
 
 
+def make_ollama_provider() -> OllamaLLMProvider:
+    return OllamaLLMProvider(
+        base_url="http://ollama.test",
+        model="qwen2.5:7b",
+        timeout_seconds=120,
+        keep_alive="1m",
+        num_ctx=8192,
+        think=False,
+    )
+
+
 @pytest.mark.parametrize(
     ("request_error", "expected_error"),
     [
@@ -91,13 +131,13 @@ async def test_ollama_request_maps_connection_failures(
     expected_error,
 ):
     monkeypatch.setattr(
-        local_llm_service.httpx,
+        ollama_provider.httpx,
         "AsyncClient",
         lambda **_kwargs: StubHTTPClient(request_error),
     )
 
     with pytest.raises(expected_error):
-        await LocalLLMService()._request_ollama("Вопрос", system_prompt="Правила")
+        await make_ollama_provider().generate("Вопрос", system_prompt="Правила")
 
 
 @pytest.mark.parametrize(
@@ -121,13 +161,45 @@ async def test_ollama_request_maps_connection_failures(
 )
 async def test_ollama_request_rejects_unusable_generation(monkeypatch, response):
     monkeypatch.setattr(
-        local_llm_service.httpx,
+        ollama_provider.httpx,
         "AsyncClient",
         lambda **_kwargs: StubHTTPClient(response),
     )
 
     with pytest.raises(OllamaGenerationError):
-        await LocalLLMService()._request_ollama("Вопрос", system_prompt="Правила")
+        await make_ollama_provider().generate("Вопрос", system_prompt="Правила")
+
+
+async def test_ollama_request_uses_stable_qwen_rag_profile(monkeypatch):
+    captured: dict = {}
+    response = httpx.Response(
+        200,
+        json={"message": {"content": "Готовый ответ."}},
+        request=httpx.Request("POST", "http://ollama.test/api/chat"),
+    )
+
+    class CapturingHTTPClient(StubHTTPClient):
+        async def post(self, url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs["json"]
+            return self.result
+
+    monkeypatch.setattr(
+        ollama_provider.httpx,
+        "AsyncClient",
+        lambda **_kwargs: CapturingHTTPClient(response),
+    )
+
+    answer = await make_ollama_provider().generate(
+        "Вопрос",
+        system_prompt="Правила",
+        response_format=RAG_ANSWER_JSON_SCHEMA,
+    )
+
+    assert answer == "Готовый ответ."
+    assert captured["json"]["think"] is False
+    assert captured["json"]["options"]["num_ctx"] == 8192
+    assert captured["json"]["format"] == RAG_ANSWER_JSON_SCHEMA
 
 
 async def test_generate_answer_retries_when_answer_contains_chinese_characters():
@@ -192,6 +264,26 @@ async def test_generate_answer_always_uses_strict_rag_system_prompt():
     assert "Не используй собственные знания" in service.requests[0][1]
 
 
+async def test_search_query_translation_is_automatic_and_structured():
+    service = StubLLMService(
+        [
+            '{"query":"What two age stages of volcanism were identified '
+            'in the Uda River area?"}'
+        ]
+    )
+
+    translated = await service.translate_search_query(
+        "Какие два возрастных этапа вулканизма выделены в районе реки Уда?",
+        source_language="ru",
+    )
+
+    assert translated == (
+        "What two age stages of volcanism were identified in the Uda River area?"
+    )
+    assert service.response_formats == [SEARCH_QUERY_JSON_SCHEMA]
+    assert "Не отвечай на вопрос" in service.requests[0][1]
+
+
 async def test_generate_answer_uses_json_schema_for_structured_output():
     service = StubLLMService(
         ['{"blocks":[{"kind":"insufficient","text":"Нет данных.","source_ids":[]}]}']
@@ -240,12 +332,15 @@ def test_rag_prompt_contains_language_guardrails_and_source_metadata():
     )
     assert "Не дополняй ответ собственными знаниями" in prompt
     assert "Проверь все переданные источники" in prompt
+    assert "не нужно ссылаться на каждый фрагмент" in prompt.lower()
     assert "самостоятельный человеческий ответ" in prompt
     assert "Не выводи в тексте ответа служебные данные" in prompt
     assert "без приветствия, вступления, повторения вопроса" in prompt
     assert "Не используй китайский язык" in prompt
     assert "Не смешивай языки" in prompt
-    assert "Целевой уровень полноты ответа — не менее 80 %" in prompt
+    assert "Целевой уровень полноты ответа — не менее 100 %" in prompt
+    assert "Первый смысловой блок должен прямо" in prompt
+    assert "не сокращай их до одной общей фразы" in prompt
     assert "Не добивай объём повторами" in prompt
     assert "не добавляй список литературы" in prompt.lower()
     assert "смешаны кириллица и латиница" in prompt
@@ -261,6 +356,7 @@ def test_rag_prompt_contains_language_guardrails_and_source_metadata():
         structured_output=False,
     )
     assert "Верни только обычный текст без JSON" in plain_prompt
+    assert "Не вставляй source_id" in plain_prompt
     assert '"blocks"' not in plain_prompt
 
     detailed_prompt = build_rag_prompt(
@@ -381,6 +477,133 @@ async def test_answer_without_relevant_sources_returns_insufficient_information(
     }
 
 
+async def test_answer_without_reranker_matches_returns_insufficient_information(
+    monkeypatch,
+):
+    relevant_chunk = {
+        "publication_id": 42,
+        "publication_title": "Фотосинтез растений",
+        "chunk_id": 7,
+        "chunk_index": 3,
+        "text": "Фотосинтез преобразует энергию света в химическую энергию.",
+        "similarity": 0.91,
+    }
+
+    class SourceRepository:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search_chunks(self, **_kwargs) -> list[dict]:
+            return [relevant_chunk]
+
+    class RejectingReranker:
+        def rerank(self, _question, chunks, *, limit):
+            assert chunks == [relevant_chunk]
+            assert limit == 5
+            return []
+
+    class UnexpectedLLMService:
+        def __init__(self) -> None:
+            raise AssertionError("LLM не должна вызываться после пустого reranker")
+
+    monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
+    monkeypatch.setattr(assistant, "LocalLLMService", UnexpectedLLMService)
+
+    result = await assistant._answer_question(
+        question="Что происходит при фотосинтезе?",
+        limit=5,
+        min_similarity=0.55,
+        db=object(),
+        embedding_service=StubEmbeddingService(),
+        reranker_service=RejectingReranker(),
+    )
+
+    assert result["sources"] == []
+    assert result["answer"] == (
+        "В текущих материалах недостаточно информации для ответа на этот вопрос. "
+        "Уточните запрос или загрузите дополнительные публикации."
+    )
+
+
+async def test_reranker_receives_only_gate_matches_and_controls_context_order(
+    monkeypatch,
+):
+    first = {
+        "publication_id": 1,
+        "publication_title": "Возраст цирконов: обзор",
+        "chunk_id": 10,
+        "chunk_index": 0,
+        "text": "Возраст цирконов месторождения обсуждался в ранней работе.",
+        "similarity": 0.94,
+    }
+    best = {
+        "publication_id": 2,
+        "publication_title": "U-Pb датирование",
+        "chunk_id": 20,
+        "chunk_index": 1,
+        "text": "Возраст цирконов месторождения составляет 250 миллионов лет.",
+        "similarity": 0.82,
+    }
+    noise = {
+        "publication_id": 3,
+        "publication_title": "Палеогеография",
+        "chunk_id": 30,
+        "chunk_index": 2,
+        "text": "Описаны осадочные бассейны и тектонические структуры.",
+        "similarity": 0.97,
+    }
+
+    class SourceRepository:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search_chunks(self, **_kwargs) -> list[dict]:
+            return [first, best, noise]
+
+    class RecordingReranker:
+        seen_ids: list[int] = []
+
+        def rerank(self, _question, chunks, *, limit):
+            self.seen_ids = [chunk["chunk_id"] for chunk in chunks]
+            return [
+                {**best, "reranker_score": 0.98},
+                {**first, "reranker_score": 0.73},
+            ][:limit]
+
+    class AnsweringLLMService:
+        prompt = ""
+
+        async def generate_answer(self, prompt: str, **_kwargs) -> str:
+            self.prompt = prompt
+            return (
+                '{"blocks":[{"kind":"answer","text":"Возраст составляет '
+                '250 миллионов лет.","source_ids":["chunk-20","chunk-10"]}]}'
+            )
+
+    reranker = RecordingReranker()
+    llm = AnsweringLLMService()
+    monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
+    monkeypatch.setattr(assistant, "LocalLLMService", lambda: llm)
+
+    result = await assistant._answer_question(
+        question="Каков возраст цирконов месторождения?",
+        limit=5,
+        min_similarity=0.55,
+        db=object(),
+        embedding_service=StubEmbeddingService(),
+        reranker_service=reranker,
+    )
+
+    assert reranker.seen_ids == [10, 20]
+    assert llm.prompt.index("source_id: chunk-20") < llm.prompt.index(
+        "source_id: chunk-10"
+    )
+    assert [source["source_id"] for source in result["sources"]] == [
+        "chunk-20",
+        "chunk-10",
+    ]
+
+
 async def test_answer_returns_sources_with_exact_public_contract(monkeypatch):
     chunk = {
         "publication_id": 42,
@@ -452,7 +675,7 @@ async def test_answer_returns_sources_with_exact_public_contract(monkeypatch):
     assert AssistantAskResponse(**result).model_dump()["sources"] == result["sources"]
 
 
-async def test_answer_retries_until_requested_source_coverage_is_reached(monkeypatch):
+async def test_answer_does_not_attach_unused_retrieval_sources(monkeypatch):
     chunks = [
         {
             "publication_id": 1,
@@ -488,7 +711,7 @@ async def test_answer_retries_until_requested_source_coverage_is_reached(monkeyp
                 ),
                 (
                     '{"blocks":[{"kind":"answer","text":"Магматизм начался '
-                    "в раннем палеозое и завершился формированием гранитов.",
+                    'в раннем палеозое и завершился формированием гранитов.",'
                     '"source_ids":["chunk-10","chunk-20"]}]}'
                 ),
             ]
@@ -510,12 +733,14 @@ async def test_answer_retries_until_requested_source_coverage_is_reached(monkeyp
         embedding_service=StubEmbeddingService(),
     )
 
-    assert [source["source_id"] for source in result["sources"]] == [
-        "chunk-10",
-        "chunk-20",
+    assert [source["source_id"] for source in result["sources"]] == ["chunk-10"]
+    assert result["answer_blocks"] == [
+        {
+            "text": "Магматизм начался в раннем палеозое.",
+            "source_ids": ["chunk-10"],
+        }
     ]
-    assert len(llm_service.prompts) == 2
-    assert "недостаточно релевантных источников" in llm_service.prompts[1]
+    assert len(llm_service.prompts) == 1
 
 
 async def test_answer_allows_insufficient_block_without_sources(monkeypatch):
@@ -742,7 +967,7 @@ async def test_russian_answer_retries_mixed_ocr_name_and_unrequested_authors(
     assert "не перечисляй авторов или литературу" in llm_service.prompts[1]
 
 
-async def test_answer_falls_back_to_plain_text_after_two_invalid_json_answers(
+async def test_answer_refuses_plain_text_fallback_without_precise_citations(
     monkeypatch,
 ):
     chunk = {
@@ -763,11 +988,7 @@ async def test_answer_falls_back_to_plain_text_after_two_invalid_json_answers(
 
     class FallbackLLMService:
         def __init__(self) -> None:
-            self.answers = [
-                "Это не JSON.",
-                "Снова не JSON.",
-                "Возраст магматизма региона составляет около 250 млн лет.",
-            ]
+            self.answers = ["Это не JSON.", "Снова не JSON."]
             self.structured_modes: list[bool] = []
             self.prompts: list[str] = []
 
@@ -787,26 +1008,18 @@ async def test_answer_falls_back_to_plain_text_after_two_invalid_json_answers(
     monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
     monkeypatch.setattr(assistant, "LocalLLMService", lambda: llm_service)
 
-    result = await assistant._answer_question(
-        question="Каков возраст магматизма региона?",
-        limit=5,
-        min_similarity=0.55,
-        db=object(),
-        embedding_service=StubEmbeddingService(),
-    )
+    with pytest.raises(OllamaGenerationError):
+        await assistant._answer_question(
+            question="Каков возраст магматизма региона?",
+            limit=5,
+            min_similarity=0.55,
+            db=object(),
+            embedding_service=StubEmbeddingService(),
+        )
 
-    assert result["answer"] == (
-        "Возраст магматизма региона составляет около 250 млн лет."
-    )
-    assert result["sources"] == []
-    assert result["answer_blocks"] == [
-        {
-            "text": "Возраст магматизма региона составляет около 250 млн лет.",
-            "source_ids": [],
-        }
-    ]
-    assert llm_service.structured_modes == [True, True, False]
-    assert "Верни только обычный текст без JSON" in llm_service.prompts[2]
+    assert llm_service.structured_modes == [True, True]
+    assert len(llm_service.prompts) == 2
+    assert "1–3 source_id" in llm_service.prompts[1]
 
 
 def test_answer_sources_are_unique_by_chunk_and_keep_multiple_publication_fragments():
@@ -935,6 +1148,35 @@ def test_relevance_filter_keeps_sources_with_question_terms():
     ]
 
     assert filter_relevant_sources("байкальские нерпы", chunks, limit=5) == chunks
+
+
+def test_relevance_gate_treats_publication_mention_language_as_meta_intent():
+    chunks = [
+        {
+            "publication_title": "Базаниты горы Хухч",
+            "text": (
+                "Базаниты представляют собой фельдшпатоидсодержащие "
+                "щелочные породы K-Na-ряда."
+            ),
+            "similarity": 0.85,
+        }
+    ]
+    question = "Базаниты — что это и в каких публикациях упоминается?"
+
+    assert extract_relevance_tokens(question) == {"базанит"}
+    assert build_entity_intent_reranker_query(question) == (
+        "базаниты",
+        "source_lookup",
+    )
+    assert filter_relevant_sources(question, chunks, limit=5) == chunks
+    assert filter_relevant_sources("базаниты", chunks, limit=5) == chunks
+
+
+def test_entity_definition_intent_keeps_only_the_scientific_subject():
+    assert build_entity_intent_reranker_query("Что такое базаниты?") == (
+        "Что такое базаниты?",
+        "definition",
+    )
 
 
 def test_answer_source_selection_does_not_fall_back_to_semantic_candidates():
@@ -1069,7 +1311,132 @@ def test_relevance_filter_allows_only_clear_cross_language_semantic_winner():
     ) == [relevant]
 
 
-def test_answer_source_selection_drops_candidates_far_below_best_match():
+async def test_assistant_searches_original_and_automatically_translated_queries(
+    monkeypatch,
+):
+    incomplete_same_language_candidate = {
+        "publication_id": 99,
+        "publication_title": "Вулканизм района реки Уда",
+        "chunk_id": 990,
+        "chunk_index": 1,
+        "text": (
+            "В районе реки Уда выделены возрастные этапы вулканизма, "
+            "но численные значения в этом фрагменте не приведены."
+        ),
+        "similarity": 0.91,
+    }
+    relevant = {
+        "publication_id": 52,
+        "publication_title": "Late Cenozoic volcanism of the Uda River area",
+        "chunk_id": 3849,
+        "chunk_index": 7,
+        "text": (
+            "The Uda River area has two age stages of volcanism identified "
+            "at 8 Ma and 4 Ma."
+        ),
+        "similarity": 0.91,
+    }
+
+    class BilingualRepository:
+        queries: list[str] = []
+
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search_chunks(self, **kwargs) -> list[dict]:
+            self.queries.append(kwargs["query_text"])
+            if kwargs["query_text"].startswith("What two"):
+                return [relevant]
+            return [incomplete_same_language_candidate]
+
+    class AcceptingReranker:
+        seen_questions: list[str] = []
+
+        def rerank(self, question, chunks, *, limit):
+            self.seen_questions.append(question)
+            return [{**chunks[0], "reranker_score": 0.99}][:limit]
+
+    class AnsweringLLMService:
+        async def generate_answer(self, _prompt: str, **_kwargs) -> str:
+            return (
+                '{"blocks":[{"kind":"answer","text":"Выделены этапы 8 и 4 млн лет.",'
+                '"source_ids":["chunk-3849"]}]}'
+            )
+
+    async def translate_query(_question: str, *, source_language: str) -> str:
+        assert source_language == "ru"
+        return "What two age stages of volcanism were identified in the Uda River area?"
+
+    reranker = AcceptingReranker()
+    monkeypatch.setattr(assistant, "SemanticSearchRepository", BilingualRepository)
+    monkeypatch.setattr(assistant, "_translate_search_query", translate_query)
+    monkeypatch.setattr(assistant, "LocalLLMService", AnsweringLLMService)
+
+    result = await assistant._answer_question(
+        question="Какие два возрастных этапа вулканизма выделены в районе реки Уда?",
+        limit=5,
+        min_similarity=0.55,
+        db=object(),
+        embedding_service=StubEmbeddingService(),
+        reranker_service=reranker,
+    )
+
+    assert len(BilingualRepository.queries) == 2
+    assert BilingualRepository.queries[1].startswith("What two")
+    assert reranker.seen_questions == BilingualRepository.queries
+    assert result["answer"] == "Выделены этапы 8 и 4 млн лет."
+    assert [source["publication_id"] for source in result["sources"]] == [52]
+
+
+def test_relevance_gate_keeps_direct_geochronology_method_evidence():
+    chunks = [
+        {
+            "publication_title": "Базитовый магматизм Сибирского кратона",
+            "text": (
+                "Радиоизотопное датирование траппов выполнялось 40Ar/39Ar "
+                "методом ступенчатого нагрева и U-Pb методом SHRIMP."
+            ),
+            "similarity": 0.0,
+        },
+        {
+            "publication_title": "Базитовый магматизм Сибирского кратона",
+            "text": "Возраст магматического события составлял около 250 млн лет.",
+            "similarity": 0.86,
+        },
+    ]
+
+    selected = filter_relevant_sources(
+        (
+            "Какие геохронологические методы использовались для определения "
+            "возраста магматических процессов Сибирского кратона?"
+        ),
+        chunks,
+        limit=5,
+    )
+
+    assert selected[0] == chunks[0]
+
+
+def test_relevance_gate_accepts_automatically_translated_ore_dating_query():
+    chunk = {
+        "publication_title": "Dating an ore deposit in Transbaikalia",
+        "text": (
+            "The age of the ore mineralisation was determined by the 40Ar/39Ar "
+            "method on encapsulated sericite grains in pyrite."
+        ),
+        "similarity": 0.9,
+    }
+
+    selected = filter_relevant_sources(
+        "Which method determined the age of ore mineralisation in Transbaikalia?",
+        [chunk],
+        limit=5,
+    )
+
+    assert selected == [chunk]
+
+
+def test_relevance_gate_preserves_all_verified_candidates_for_reranker():
     best = {
         "publication_id": 1,
         "chunk_id": 10,
@@ -1089,10 +1456,10 @@ def test_answer_source_selection_drops_candidates_far_below_best_match():
         "Каков возраст цирконов месторождения?",
         [best, weak],
         limit=5,
-    ) == [best]
+    ) == [best, weak]
 
 
-def test_answer_source_selection_caps_context_at_three_strong_chunks():
+def test_answer_source_selection_allows_up_to_eight_strong_chunks():
     chunks = [
         {
             "publication_id": index,
@@ -1106,8 +1473,8 @@ def test_answer_source_selection_caps_context_at_three_strong_chunks():
 
     selected = select_answer_sources("магматизм региона", chunks, limit=5)
 
-    assert len(selected) == 3
-    assert selected == chunks[:3]
+    assert len(selected) == 4
+    assert selected == chunks
 
 
 def test_answer_source_selection_prefers_different_publications():

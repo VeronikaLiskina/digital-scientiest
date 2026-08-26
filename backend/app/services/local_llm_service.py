@@ -1,8 +1,17 @@
+import json
 import re
 
-import httpx
-
-from app.core.config import settings
+from app.services.llm import (
+    LLMConfigurationError,
+    LLMGenerationError,
+    LLMProvider,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+    LocalLLMError,
+    create_llm_provider,
+)
+from app.services.llm.base import ResponseFormat
 
 
 CHINESE_RE = re.compile(
@@ -60,21 +69,30 @@ RAG_ANSWER_JSON_SCHEMA = {
     "additionalProperties": False,
 }
 
+SEARCH_QUERY_JSON_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "query": {
+            "type": "string",
+            "minLength": 2,
+        }
+    },
+    "required": ["query"],
+    "additionalProperties": False,
+}
 
-class LocalLLMError(RuntimeError):
-    """Base error for failures that can be safely shown by the assistant API."""
+SEARCH_TRANSLATION_SYSTEM_PROMPT = (
+    "Ты переводчик научных поисковых запросов между русским и английским языками. "
+    "Переводи весь смысл запроса, включая предмет, действие, географические названия "
+    "и научные термины. Сохраняй формулы, обозначения, числа и общепринятые сокращения. "
+    "Не отвечай на вопрос и не добавляй пояснений. Верни только заданный JSON."
+)
 
 
-class OllamaUnavailableError(LocalLLMError):
-    """Ollama cannot be reached."""
-
-
-class OllamaTimeoutError(LocalLLMError):
-    """Ollama did not finish generation in time."""
-
-
-class OllamaGenerationError(LocalLLMError):
-    """Ollama responded, but a usable answer could not be generated."""
+# Backwards-compatible imports for code that still uses the former Ollama names.
+OllamaUnavailableError = LLMUnavailableError
+OllamaTimeoutError = LLMTimeoutError
+OllamaGenerationError = LLMGenerationError
 
 
 def detect_question_language(question: str) -> str:
@@ -120,11 +138,12 @@ GENERAL_KNOWLEDGE_SYSTEM_PROMPT = (
 
 
 class LocalLLMService:
-    def __init__(self) -> None:
-        self.base_url = settings.ollama_base_url.rstrip("/")
-        self.model = settings.ollama_model
-        self.timeout = settings.ollama_timeout_seconds
-        self.keep_alive = settings.ollama_keep_alive
+    """Provider-neutral assistant orchestration kept under its legacy import name."""
+
+    def __init__(self, provider: LLMProvider | None = None) -> None:
+        self.provider = provider or create_llm_provider()
+        self.provider_name = self.provider.name
+        self.model = self.provider.model
 
     async def generate_answer(
         self,
@@ -155,6 +174,37 @@ class LocalLLMService:
             response_format=None,
         )
 
+    async def translate_search_query(
+        self,
+        query: str,
+        *,
+        source_language: str,
+    ) -> str:
+        target_language = "английский" if source_language == "ru" else "русский"
+        raw_translation = await self._request_provider(
+            (
+                f"Переведи поисковый запрос на {target_language} язык. "
+                "Верни JSON вида {\"query\":\"перевод\"}.\n\n"
+                f"Исходный запрос:\n{query}"
+            ),
+            system_prompt=SEARCH_TRANSLATION_SYSTEM_PROMPT,
+            response_format=SEARCH_QUERY_JSON_SCHEMA,
+        )
+
+        try:
+            translated = json.loads(raw_translation)["query"]
+        except (json.JSONDecodeError, KeyError, TypeError) as exc:
+            raise LLMGenerationError(
+                "Модель вернула некорректный перевод поискового запроса"
+            ) from exc
+
+        if not isinstance(translated, str) or len(translated.strip()) < 2:
+            raise LLMGenerationError(
+                "Модель вернула пустой перевод поискового запроса"
+            )
+
+        return translated.strip()
+
     async def _generate_with_system_prompt(
         self,
         prompt: str,
@@ -166,7 +216,7 @@ class LocalLLMService:
         expected_language = (
             expected_language if expected_language in LANGUAGE_FAILURE_MESSAGES else "ru"
         )
-        answer = await self._request_ollama(
+        answer = await self._request_provider(
             prompt,
             system_prompt=system_prompt,
             response_format=response_format,
@@ -179,7 +229,7 @@ class LocalLLMService:
                 "Используй только факты из исходного задания.\n\n"
                 f"{prompt}"
             )
-            answer = await self._request_ollama(
+            answer = await self._request_provider(
                 retry_prompt,
                 system_prompt=system_prompt,
                 response_format=response_format,
@@ -190,74 +240,15 @@ class LocalLLMService:
 
         return answer
 
-    async def _request_ollama(
+    async def _request_provider(
         self,
         prompt: str,
         *,
         system_prompt: str,
-        response_format: str | dict | None = None,
+        response_format: ResponseFormat = None,
     ) -> str:
-        url = f"{self.base_url}/api/chat"
-
-        payload = {
-            "model": self.model,
-            "stream": False,
-            "keep_alive": self.keep_alive,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system_prompt,
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            "options": {
-                "temperature": 0.1,
-                "top_p": 0.8,
-                "repeat_penalty": 1.1,
-            },
-        }
-        if response_format is not None:
-            payload["format"] = response_format
-
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-        except httpx.TimeoutException as exc:
-            raise OllamaTimeoutError(
-                "Модель не успела подготовить ответ за отведённое время"
-            ) from exc
-        except httpx.ConnectError as exc:
-            raise OllamaUnavailableError(
-                "Сервис локальной модели сейчас недоступен"
-            ) from exc
-        except httpx.HTTPStatusError as exc:
-            raise OllamaGenerationError(
-                f"Сервис модели вернул ошибку {exc.response.status_code}"
-            ) from exc
-        except httpx.RequestError as exc:
-            raise OllamaUnavailableError(
-                "Не удалось связаться с сервисом локальной модели"
-            ) from exc
-
-        try:
-            data = response.json()
-        except ValueError as exc:
-            raise OllamaGenerationError(
-                "Сервис модели вернул некорректный ответ"
-            ) from exc
-
-        try:
-            answer = data["message"]["content"]
-        except (KeyError, TypeError) as exc:
-            raise OllamaGenerationError(
-                "Сервис модели вернул ответ в неожиданном формате"
-            ) from exc
-
-        if not isinstance(answer, str) or not answer.strip():
-            raise OllamaGenerationError("Модель вернула пустой ответ")
-
-        return answer.strip()
+        return await self.provider.generate(
+            prompt,
+            system_prompt=system_prompt,
+            response_format=response_format,
+        )

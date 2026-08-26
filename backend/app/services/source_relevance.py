@@ -4,10 +4,23 @@ from functools import lru_cache
 
 import pymorphy3
 
+from app.services.scientific_query_expansion import (
+    contains_geochronology_method_evidence,
+    is_geochronology_method_query,
+)
+
 
 TOKEN_RE = re.compile(r"[A-Za-zА-Яа-яЁё0-9]+")
 FIGURE_OR_TABLE_CAPTION_RE = re.compile(
     r"^\s*(?:рис(?:\.|унок\b)|fig(?:\.|ure\b)|табл(?:\.|ица\b)|table\b)",
+    re.IGNORECASE,
+)
+SOURCE_LOOKUP_INTENT_RE = re.compile(
+    r"(?:упомин\w*|публикаци\w*|источник\w*|в\s+каких\s+работ\w*)",
+    re.IGNORECASE,
+)
+DEFINITION_INTENT_RE = re.compile(
+    r"(?:что\s+(?:это|такое)|что\s+представля\w*|определени\w*)",
     re.IGNORECASE,
 )
 
@@ -46,6 +59,9 @@ STOPWORDS = {
     "при",
     "про",
     "публикация",
+    "упоминаться",
+    "упоминать",
+    "упомянуть",
     "почему",
     "материал",
     "источник",
@@ -62,6 +78,7 @@ STOPWORDS = {
     "сколько",
     "зачем",
     "это",
+    "такой",
     "the",
     "a",
     "an",
@@ -103,11 +120,11 @@ MIN_SHORT_QUERY_COVERAGE = 1.0
 MIN_LONG_QUERY_COVERAGE = 0.55
 MIN_STRONG_SEMANTIC_SIMILARITY = 0.78
 MIN_STRONG_SEMANTIC_COVERAGE = 0.45
-MAX_SCORE_GAP = 0.12
-MAX_SIMILARITY_GAP = 0.12
-MAX_ANSWER_SOURCES = 3
-MIN_CROSS_LANGUAGE_SIMILARITY = 0.80
+MAX_ANSWER_SOURCES = 8
+MIN_CROSS_LANGUAGE_SIMILARITY = 0.85
 MIN_CROSS_LANGUAGE_MARGIN = 0.04
+MIN_STRONG_MULTITOKEN_SIMILARITY = 0.85
+MIN_STRONG_MULTITOKEN_COVERAGE = 0.35
 MIN_SHARED_PREFIX_LENGTH = 6
 MIN_SHARED_PREFIX_RATIO = 0.75
 
@@ -119,6 +136,19 @@ class SourceRelevanceScore:
     text_coverage: float
     title_coverage: float
     matched_text_tokens: frozenset[str]
+    question_tokens: frozenset[str]
+    specific_question_tokens: frozenset[str]
+    matched_specific_tokens: frozenset[str]
+    matched_cross_language_tokens: frozenset[str]
+    required_text_coverage: float
+    cross_language_coverage: float
+    is_cross_language: bool
+    is_caption: bool
+    generic_high_confidence_match: bool
+    strong_multitoken_match: bool
+    direct_geochronology_method_evidence: bool
+    is_directly_relevant: bool
+    is_cross_language_relevant: bool
     score: float
     is_relevant: bool
 
@@ -149,6 +179,31 @@ def extract_relevance_tokens(text: str) -> set[str]:
         tokens.add(token)
 
     return tokens
+
+
+def build_entity_intent_reranker_query(question: str) -> tuple[str, str] | None:
+    """Return a focused entity query and intent for safe short-query reranking.
+
+    Meta wording such as "where is X mentioned" controls answer formatting,
+    not passage relevance. The entity itself remains mandatory because this
+    helper only activates when exactly one relevance token survives.
+    """
+    relevance_tokens = extract_relevance_tokens(question)
+    if len(relevance_tokens) != 1:
+        return None
+
+    entity_token = next(iter(relevance_tokens))
+    entity_surface = entity_token
+    for raw_token in TOKEN_RE.findall(question):
+        if _normalize_token(raw_token) == entity_token:
+            entity_surface = raw_token.casefold()
+            break
+
+    if SOURCE_LOOKUP_INTENT_RE.search(question):
+        return entity_surface, "source_lookup"
+    if DEFINITION_INTENT_RE.search(question):
+        return f"Что такое {entity_surface}?", "definition"
+    return None
 
 
 def _tokens_match(left: str, right: str) -> bool:
@@ -221,6 +276,7 @@ def score_source_relevance(question: str, chunk: dict) -> SourceRelevanceScore:
     title_coverage = _weighted_token_coverage(question_tokens, title_overlap)
     specific_question_tokens = question_tokens - LOW_INFORMATION_TOKENS
     matched_specific_tokens = text_overlap & specific_question_tokens
+    is_cross_language = is_cross_language_pair(question, source_text)
 
     if len(question_tokens) <= 2:
         required_coverage = MIN_SHORT_QUERY_COVERAGE
@@ -234,23 +290,44 @@ def score_source_relevance(question: str, chunk: dict) -> SourceRelevanceScore:
         and text_overlap
         and similarity >= 0.85
     )
-    is_relevant = bool(
+    strong_multitoken_match = bool(
+        similarity >= MIN_STRONG_MULTITOKEN_SIMILARITY
+        and text_coverage >= MIN_STRONG_MULTITOKEN_COVERAGE
+        and len(matched_specific_tokens) >= 3
+    )
+    direct_geochronology_method_evidence = bool(
+        is_geochronology_method_query(question)
+        and contains_geochronology_method_evidence(source_text)
+        and not is_caption
+        and matched_specific_tokens
+    )
+    is_directly_relevant = bool(
         question_tokens
-        and text_overlap
+        and (text_overlap or direct_geochronology_method_evidence)
         and not is_caption
         and (
             text_coverage >= required_coverage
             or generic_high_confidence_match
+            or strong_multitoken_match
+            or direct_geochronology_method_evidence
         )
         and (
             not specific_question_tokens
             or matched_specific_tokens
+            or direct_geochronology_method_evidence
         )
     )
+    is_cross_language_relevant = bool(
+        is_cross_language
+        and not is_caption
+        and similarity >= MIN_CROSS_LANGUAGE_SIMILARITY
+    )
+    is_relevant = is_directly_relevant or is_cross_language_relevant
     combined_score = (
         text_coverage * 0.70
         + similarity * 0.25
         + title_coverage * 0.05
+        + (0.40 if direct_geochronology_method_evidence else 0.0)
     )
     return SourceRelevanceScore(
         chunk=chunk,
@@ -258,16 +335,79 @@ def score_source_relevance(question: str, chunk: dict) -> SourceRelevanceScore:
         text_coverage=text_coverage,
         title_coverage=title_coverage,
         matched_text_tokens=frozenset(text_overlap),
+        question_tokens=frozenset(question_tokens),
+        specific_question_tokens=frozenset(specific_question_tokens),
+        matched_specific_tokens=frozenset(matched_specific_tokens),
+        matched_cross_language_tokens=frozenset(),
+        required_text_coverage=required_coverage,
+        cross_language_coverage=0.0,
+        is_cross_language=is_cross_language,
+        is_caption=is_caption,
+        generic_high_confidence_match=generic_high_confidence_match,
+        strong_multitoken_match=strong_multitoken_match,
+        direct_geochronology_method_evidence=(
+            direct_geochronology_method_evidence
+        ),
+        is_directly_relevant=is_directly_relevant,
+        is_cross_language_relevant=is_cross_language_relevant,
         score=combined_score,
         is_relevant=is_relevant,
     )
+
+
+def explain_source_relevance(question: str, chunk: dict) -> dict[str, object]:
+    """Return gate inputs and machine-readable rejection reasons.
+
+    This is intentionally diagnostic-only: the decision is produced by the
+    same ``score_source_relevance`` call used by the production gate.
+    """
+    score = score_source_relevance(question, chunk)
+    reasons: list[str] = []
+
+    if not score.question_tokens:
+        reasons.append("empty_question_tokens")
+    if not score.matched_text_tokens:
+        reasons.append("no_text_token_overlap")
+    if score.is_caption:
+        reasons.append("figure_or_table_caption")
+    if (
+        score.text_coverage < score.required_text_coverage
+        and not score.generic_high_confidence_match
+    ):
+        reasons.append("insufficient_text_coverage")
+    if score.specific_question_tokens and not score.matched_specific_tokens:
+        reasons.append("no_specific_question_token_match")
+
+    return {
+        "directly_relevant": score.is_directly_relevant,
+        "cross_language_relevant": score.is_cross_language_relevant,
+        "relevance_score": score.score,
+        "similarity": score.similarity,
+        "text_coverage": score.text_coverage,
+        "required_text_coverage": score.required_text_coverage,
+        "title_coverage": score.title_coverage,
+        "matched_text_tokens": sorted(score.matched_text_tokens),
+        "matched_specific_tokens": sorted(score.matched_specific_tokens),
+        "matched_cross_language_tokens": sorted(
+            score.matched_cross_language_tokens
+        ),
+        "cross_language_coverage": score.cross_language_coverage,
+        "is_cross_language": score.is_cross_language,
+        "is_caption": score.is_caption,
+        "generic_high_confidence_match": score.generic_high_confidence_match,
+        "strong_multitoken_match": score.strong_multitoken_match,
+        "direct_geochronology_method_evidence": (
+            score.direct_geochronology_method_evidence
+        ),
+        "rejection_reasons": reasons if not score.is_relevant else [],
+    }
 
 
 def is_relevant_source(question: str, chunk: dict) -> bool:
     return score_source_relevance(question, chunk).is_relevant
 
 
-def _is_cross_language_pair(question: str, source_text: str) -> bool:
+def is_cross_language_pair(question: str, source_text: str) -> bool:
     question_cyrillic = len(re.findall(r"[А-Яа-яЁё]", question))
     question_latin = len(re.findall(r"[A-Za-z]", question))
     source_cyrillic = len(re.findall(r"[А-Яа-яЁё]", source_text))
@@ -297,7 +437,7 @@ def filter_relevant_sources(
                 if not FIGURE_OR_TABLE_CAPTION_RE.match(
                     str(score.chunk.get("text") or "")
                 )
-                and _is_cross_language_pair(
+                and is_cross_language_pair(
                     question,
                     str(score.chunk.get("text") or ""),
                 )
@@ -323,15 +463,7 @@ def filter_relevant_sources(
     relevant_scores.sort(
         key=lambda item: (-item.score, -item.similarity)
     )
-    best_score = relevant_scores[0].score
-    best_similarity = relevant_scores[0].similarity
-    close_scores = [
-        score
-        for score in relevant_scores
-        if score.score >= best_score - MAX_SCORE_GAP
-        and score.similarity >= best_similarity - MAX_SIMILARITY_GAP
-    ]
-    return [score.chunk for score in close_scores[:limit]]
+    return [score.chunk for score in relevant_scores[:limit]]
 
 
 def diversify_chunks_by_publication(

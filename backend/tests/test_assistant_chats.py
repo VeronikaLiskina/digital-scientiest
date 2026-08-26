@@ -4,9 +4,11 @@ from app.api import assistant
 from app.dependencies import get_embedding_service
 from app.main import app
 from app.services.local_llm_service import (
-    OllamaGenerationError,
-    OllamaTimeoutError,
-    OllamaUnavailableError,
+    LLMConfigurationError,
+    LLMGenerationError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
 )
 
 
@@ -84,25 +86,48 @@ async def test_chat_history_create_send_reopen_and_delete(client, monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("error", "expected_status", "expected_code", "expected_title"),
+    (
+        "error",
+        "expected_status",
+        "expected_code",
+        "expected_title",
+        "expected_retryable",
+    ),
     [
         (
-            OllamaUnavailableError("offline"),
+            LLMUnavailableError("offline"),
             503,
-            "ollama_unavailable",
+            "llm_unavailable",
             "Ассистент временно недоступен",
+            True,
         ),
         (
-            OllamaTimeoutError("slow"),
+            LLMTimeoutError("slow"),
             504,
-            "ollama_timeout",
+            "llm_timeout",
             "Ответ занял слишком много времени",
+            True,
         ),
         (
-            OllamaGenerationError("invalid response"),
+            LLMGenerationError("invalid response"),
             502,
             "generation_failed",
             "Не удалось подготовить ответ",
+            True,
+        ),
+        (
+            LLMRateLimitError("quota"),
+            429,
+            "llm_rate_limited",
+            "Временный лимит запросов",
+            True,
+        ),
+        (
+            LLMConfigurationError("missing key"),
+            503,
+            "llm_configuration_error",
+            "Ассистент не настроен",
+            False,
         ),
     ],
 )
@@ -113,6 +138,7 @@ async def test_chat_returns_clear_recoverable_model_errors(
     expected_status,
     expected_code,
     expected_title,
+    expected_retryable,
 ):
     async def failing_answer_question(**_kwargs):
         raise error
@@ -131,7 +157,7 @@ async def test_chat_returns_clear_recoverable_model_errors(
     detail = response.json()["detail"]
     assert detail["code"] == expected_code
     assert detail["title"] == expected_title
-    assert detail["retryable"] is True
+    assert detail["retryable"] is expected_retryable
     assert isinstance(detail["message"], str) and detail["message"]
     assert "Traceback" not in response.text
 
