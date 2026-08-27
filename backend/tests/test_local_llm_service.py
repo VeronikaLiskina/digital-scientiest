@@ -1388,6 +1388,131 @@ async def test_assistant_searches_original_and_automatically_translated_queries(
     assert [source["publication_id"] for source in result["sources"]] == [52]
 
 
+async def test_assistant_skips_translation_for_two_strong_initial_chunks(
+    monkeypatch,
+):
+    chunks = [
+        {
+            "publication_id": 7,
+            "publication_title": "Megafloods of Northern Asia",
+            "chunk_id": chunk_id,
+            "chunk_index": index,
+            "text": text,
+            "similarity": 0.9,
+        }
+        for index, (chunk_id, text) in enumerate(
+            [
+                (2844, "Natural dam collapse can trigger a megaflood."),
+                (
+                    2845,
+                    "A megaflood called a jokulhlaup can be triggered by "
+                    "subglacial volcanic activity.",
+                ),
+            ]
+        )
+    ]
+
+    class SourceRepository:
+        calls = 0
+
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search_chunks(self, **_kwargs) -> list[dict]:
+            type(self).calls += 1
+            return chunks
+
+    async def unexpected_translation(*_args, **_kwargs) -> str:
+        raise AssertionError("Strong initial retrieval must not be translated")
+
+    class AnsweringLLMService:
+        async def generate_answer(self, _prompt: str, **_kwargs) -> str:
+            return (
+                '{"blocks":[{"kind":"answer","text":"Natural dam collapse and '
+                'subglacial volcanic activity can trigger megafloods.",'
+                '"source_ids":["chunk-2844","chunk-2845"]}]}'
+            )
+
+    monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
+    monkeypatch.setattr(assistant, "_translate_search_query", unexpected_translation)
+    monkeypatch.setattr(assistant, "LocalLLMService", AnsweringLLMService)
+
+    result = await assistant._answer_question(
+        question="Which natural processes can trigger a megaflood?",
+        limit=5,
+        min_similarity=0.55,
+        db=object(),
+        embedding_service=StubEmbeddingService(),
+        reranker_service=StubRerankerService(),
+    )
+
+    assert SourceRepository.calls == 1
+    assert [source["chunk_id"] for source in result["sources"]] == [2844, 2845]
+
+
+async def test_translated_retrieval_sends_strong_semantic_candidates_to_reranker(
+    monkeypatch,
+):
+    translated_chunk = {
+        "publication_id": 7,
+        "publication_title": "Megafloods of Northern Asia",
+        "chunk_id": 2844,
+        "chunk_index": 0,
+        "text": (
+            "A catastrophic outburst can result from natural and artificial "
+            "water storage systems."
+        ),
+        "similarity": 0.87,
+    }
+
+    class BilingualRepository:
+        def __init__(self, _db) -> None:
+            pass
+
+        async def search_chunks(self, **kwargs) -> list[dict]:
+            if kwargs["query_text"].startswith("What do the authors"):
+                return [translated_chunk]
+            return []
+
+    class RecordingReranker:
+        seen_ids: list[int] = []
+
+        def rerank(self, _question, chunks, *, limit):
+            self.seen_ids = [chunk["chunk_id"] for chunk in chunks]
+            return [{**chunks[0], "reranker_score": 0.95}][:limit]
+
+    async def translate_query(_question: str, *, source_language: str) -> str:
+        assert source_language == "ru"
+        return (
+            "What do the authors call a mega-flood and from which reservoirs "
+            "can such a water release originate?"
+        )
+
+    class AnsweringLLMService:
+        async def generate_answer(self, _prompt: str, **_kwargs) -> str:
+            return (
+                '{"blocks":[{"kind":"answer","text":"Это катастрофический '
+                'выброс воды.","source_ids":["chunk-2844"]}]}'
+            )
+
+    reranker = RecordingReranker()
+    monkeypatch.setattr(assistant, "SemanticSearchRepository", BilingualRepository)
+    monkeypatch.setattr(assistant, "_translate_search_query", translate_query)
+    monkeypatch.setattr(assistant, "LocalLLMService", AnsweringLLMService)
+
+    result = await assistant._answer_question(
+        question="Что авторы называют мегапаводком?",
+        limit=5,
+        min_similarity=0.55,
+        db=object(),
+        embedding_service=StubEmbeddingService(),
+        reranker_service=reranker,
+    )
+
+    assert reranker.seen_ids == [2844]
+    assert [source["chunk_id"] for source in result["sources"]] == [2844]
+
+
 def test_relevance_gate_keeps_direct_geochronology_method_evidence():
     chunks = [
         {

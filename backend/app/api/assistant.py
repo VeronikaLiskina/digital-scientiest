@@ -68,6 +68,23 @@ router = APIRouter(prefix="/assistant", tags=["Assistant"])
 logger = logging.getLogger(__name__)
 
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
+MIN_BILINGUAL_FALLBACK_CHUNKS = 2
+MIN_BILINGUAL_FALLBACK_SCORE = 0.7
+MIN_TRANSLATED_SEMANTIC_SIMILARITY = 0.8
+MAX_TRANSLATED_SEMANTIC_CANDIDATES = 8
+
+
+def _needs_bilingual_fallback(chunks: list[dict[str, Any]]) -> bool:
+    """Retry in the other language only when the first retrieval is weak."""
+
+    if len(chunks) < MIN_BILINGUAL_FALLBACK_CHUNKS:
+        return True
+
+    best_score = max(
+        (float(chunk.get("reranker_score") or 0.0) for chunk in chunks),
+        default=0.0,
+    )
+    return best_score < MIN_BILINGUAL_FALLBACK_SCORE
 
 
 def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
@@ -428,6 +445,8 @@ async def _answer_question(
     async def retrieve_verified_chunks(
         search_question: str,
         candidates: list[dict] | None = None,
+        *,
+        allow_semantic_fallback: bool = False,
     ) -> list[dict]:
         nonlocal reranker_service
 
@@ -449,6 +468,16 @@ async def _answer_question(
             chunks=candidates,
             limit=len(candidates),
         )
+        if allow_semantic_fallback:
+            semantic_candidates = [
+                chunk
+                for chunk in candidates
+                if float(chunk.get("similarity") or 0.0)
+                >= MIN_TRANSLATED_SEMANTIC_SIMILARITY
+            ][:MAX_TRANSLATED_SEMANTIC_CANDIDATES]
+            relevant = _unique_ranked_chunks(
+                [*relevant, *semantic_candidates]
+            )[:MAX_TRANSLATED_SEMANTIC_CANDIDATES]
         if not relevant:
             return []
 
@@ -465,20 +494,28 @@ async def _answer_question(
 
     chunks = await retrieve_verified_chunks(question, candidate_chunks)
     translated_chunks: list[dict] = []
-    try:
-        translated_query = await _translate_search_query(
-            question,
-            source_language=expected_language,
-        )
-    except LocalLLMError as exc:
-        logger.warning("Bilingual search query translation failed: %s", exc)
+    if _needs_bilingual_fallback(chunks):
+        try:
+            translated_query = await _translate_search_query(
+                question,
+                source_language=expected_language,
+            )
+        except LocalLLMError as exc:
+            logger.warning("Bilingual search query translation failed: %s", exc)
+        else:
+            if (
+                translated_query.strip()
+                and translated_query.casefold() != question.casefold()
+            ):
+                logger.info("Running retrieval with automatically translated query")
+                translated_chunks = await retrieve_verified_chunks(
+                    translated_query,
+                    allow_semantic_fallback=True,
+                )
     else:
-        if (
-            translated_query.strip()
-            and translated_query.casefold() != question.casefold()
-        ):
-            logger.info("Running retrieval with automatically translated query")
-            translated_chunks = await retrieve_verified_chunks(translated_query)
+        logger.info(
+            "Skipping bilingual retrieval fallback: initial retrieval is strong"
+        )
 
     chunks = diversify_chunks_by_publication(
         _unique_ranked_chunks([*chunks, *translated_chunks]),

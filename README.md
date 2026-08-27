@@ -1,68 +1,166 @@
-# Digital Scientist
+# Цифровой учёный
 
-## Запуск через Docker Compose
+Веб-приложение для хранения и обработки научных публикаций, семантического
+поиска и ответов на вопросы по загруженным материалам. Ассистент работает по
+RAG-подходу: сначала находит подходящие фрагменты публикаций, проверяет их
+релевантность и только затем передаёт контекст языковой модели.
 
-Скопируйте пример настроек и запустите PostgreSQL, Redis, API, Celery worker и
-frontend:
+## Возможности
+
+- загрузка одной или нескольких PDF-публикаций;
+- извлечение текста и метаданных, OCR для сканированных страниц;
+- автоматическое разбиение текста на чанки и построение embeddings;
+- каталог публикаций, авторов, тем и ключевых слов;
+- семантический и полнотекстовый поиск;
+- RAG-ассистент с точными ссылками на использованные фрагменты;
+- автоматический поиск между русскими и английскими публикациями;
+- локальная генерация через Ollama, облачная через Groq или гибридный режим;
+- очередь фоновой обработки PDF и журнал ошибок;
+- воспроизводимые retrieval- и model-evaluation тесты.
+
+## Как устроен проект
+
+```mermaid
+flowchart LR
+    UI[React-интерфейс] --> API[FastAPI]
+    API --> DB[(PostgreSQL + pgvector)]
+    API --> REDIS[(Redis)]
+    REDIS --> WORKER[Celery worker]
+    WORKER --> PDF[PDF / OCR / чанки / embeddings]
+    PDF --> DB
+
+    API --> SEARCH[Vector search + FTS + RRF]
+    SEARCH --> GATE[Relevance gate]
+    GATE --> RERANK[BGE reranker]
+    RERANK --> LLM[Ollama / Groq / Hybrid]
+    LLM --> UI
+```
+
+### Основные технологии
+
+| Слой | Используется |
+|---|---|
+| Frontend | React 18, TypeScript, Vite, React Router, Sass |
+| API | FastAPI, Pydantic, SQLAlchemy, Alembic |
+| Хранилище | PostgreSQL 16, pgvector |
+| Фоновые задачи | Celery, Redis |
+| PDF и OCR | PyMuPDF, pypdf, Tesseract, pytesseract, Pillow |
+| Embeddings | `intfloat/multilingual-e5-base`, Sentence Transformers |
+| Reranker | `BAAI/bge-reranker-v2-m3`, Transformers, PyTorch |
+| LLM | Ollama (`gemma4:12b`), Groq (`openai/gpt-oss-120b`) |
+| Тестирование | pytest, Node.js test runner |
+
+## Быстрый запуск
+
+### Требования
+
+- Docker Desktop с Docker Compose;
+- Ollama, запущенная на основной системе;
+- модель `gemma4:12b` для локального или гибридного режима;
+- Groq API key — только если нужен `groq` или `hybrid`.
+
+### 1. Подготовьте настройки
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Bash:
 
 ```bash
 cp .env.example .env
-docker compose up --build
 ```
 
-В отдельном терминале примените миграции:
+Реальный `GROQ_API_KEY` храните только в `.env`. Этот файл исключён из Git.
 
-```bash
+### 2. Подготовьте локальную модель
+
+```powershell
+ollama pull gemma4:12b
+ollama list
+```
+
+Ollama должна продолжать работать во время использования ассистента. Docker
+обращается к ней через `http://host.docker.internal:11434`.
+
+### 3. Запустите приложение
+
+```powershell
+docker compose up -d --build
 docker compose exec backend alembic upgrade head
 ```
 
-API доступен на `http://localhost:8000`, frontend — на
-`http://localhost:5173`.
+После запуска доступны:
 
-PDF передаётся worker только по `source_file_id`. Сам файл читается из общего
-тома `backend/uploads`, статусы выполнения и ошибки сохраняются в PostgreSQL.
-Redis используется только как брокер Celery; result backend не настроен.
+- пользовательский интерфейс — <http://localhost:5173>;
+- ассистент — <http://localhost:5173/assistant>;
+- административная часть — <http://localhost:5173/admin>;
+- API — <http://localhost:8000>;
+- Swagger UI — <http://localhost:8000/docs>;
+- проверка состояния — <http://localhost:8000/health>.
 
-## Локальный запуск
-
-Для запуска вне Docker установите зависимости backend и укажите локальные
-адреса PostgreSQL и Redis:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
-$env:DATABASE_URL = "postgresql+asyncpg://postgres:nika@localhost:55432/digital_scientist"
-$env:CELERY_BROKER_URL = "redis://localhost:6379/0"
-```
-
-Запустите API:
+Проверить контейнеры и логи:
 
 ```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -m alembic upgrade head
-..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+docker compose ps
+docker compose logs -f backend celery-worker
 ```
 
-Запустите worker в отдельном терминале:
+Остановить приложение без удаления базы:
 
 ```powershell
-Set-Location backend
-..\.venv\Scripts\celery.exe -A app.celery_app:celery_app worker --loglevel=INFO
+docker compose down
 ```
 
-Celery Beat проекту не требуется.
+> `docker compose down -v` удаляет тома PostgreSQL и Redis вместе с данными.
+
+## Как работает AI-ассистент
+
+Для каждого вопроса выполняется следующий конвейер:
+
+1. `multilingual-e5-base` строит embedding вопроса.
+2. pgvector возвращает до 50 семантических кандидатов, PostgreSQL FTS — до
+   50 лексических кандидатов.
+3. Reciprocal Rank Fusion (`RRF_K=60`) объединяет результаты и оставляет до
+   30 чанков.
+4. Relevance gate отбрасывает фрагменты без достаточных текстовых или
+   семантических признаков.
+5. Cross-encoder `bge-reranker-v2-m3` переоценивает оставшиеся пары
+   «вопрос — фрагмент». В итоговый контекст попадает не более 6 чанков с
+   оценкой не ниже `0.5`.
+6. Если первый поиск слабый, вопрос автоматически переводится на другой язык
+   и выполняется дополнительный поиск. Это позволяет задавать русские вопросы
+   к английским статьям и наоборот. При сильном первом результате повторный
+   поиск пропускается.
+7. LLM получает только проверенные фрагменты. Ответ проходит валидацию языка,
+   JSON-структуры и ссылок на реально использованные `chunk_id`.
+
+Если надёжных источников нет, система возвращает сообщение о недостатке
+информации и не просит модель придумывать ответ.
 
 ## Выбор LLM-провайдера
 
-Интерактивный RAG-ассистент и автоматический перевод поискового запроса могут
-работать через локальную Ollama, Groq или гибрид обоих провайдеров. По умолчанию
-остаётся локальный режим:
+Провайдер задаётся в `.env` через `LLM_PROVIDER`.
+
+| Режим | Поведение | Особенности |
+|---|---|---|
+| `ollama` | Все ответы генерируются локально | Максимальная приватность, скорость зависит от компьютера |
+| `groq` | Все ответы генерируются через Groq API | Обычно быстрее, но требуется сеть и доступная квота |
+| `hybrid` | Сначала запускается Ollama, через 10 секунд — Groq | Ограничивает очень долгие локальные ответы |
+
+### Только Ollama
 
 ```env
 LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://host.docker.internal:11434
 OLLAMA_MODEL=gemma4:12b
+OLLAMA_NUM_CTX=8192
+OLLAMA_THINK=false
 ```
 
-Для Groq создайте новый ключ в Groq Console и сохраните его только в `.env`:
+### Только Groq
 
 ```env
 LLM_PROVIDER=groq
@@ -72,70 +170,164 @@ GROQ_REASONING_EFFORT=medium
 GROQ_MAX_COMPLETION_TOKENS=1400
 ```
 
-Гибридный режим сначала запускает Ollama. Если локальная модель не ответила за
-заданный интервал, Groq получает тот же prompt и тот же RAG-контекст. Используется
-первый успешно завершившийся ответ; при ошибке или исчерпании квоты Groq система
-продолжает ждать уже выполняющийся локальный запрос:
-
-```env
-LLM_PROVIDER=hybrid
-HYBRID_FALLBACK_DELAY_SECONDS=35
-```
-
-До переключения всего backend проверьте новый ключ отдельным коротким запросом:
+Проверить ключ до переключения основного backend:
 
 ```powershell
-docker compose run --rm --build -e LLM_PROVIDER=groq backend `
+docker compose run --rm -e LLM_PROVIDER=groq backend `
   python -m scripts.check_groq_connection
 ```
 
-После смены провайдера пересоздайте backend:
+### Гибридный режим
 
-```powershell
-docker compose up -d --build --force-recreate backend
+```env
+LLM_PROVIDER=hybrid
+HYBRID_FALLBACK_DELAY_SECONDS=10
 ```
 
-В Groq передаются тот же RAG prompt и те же фрагменты публикаций, что и в
-Ollama. Встроенные browser search, code execution и другие tools не включаются,
-поэтому модель не получает внешние источники и сохраняется честность benchmark.
-Для возврата к локальной модели достаточно снова указать
-`LLM_PROVIDER=ollama` и пересоздать backend. AI-анализ метаданных публикаций —
-отдельный внутренний процесс; он продолжает использовать Ollama.
+В этом режиме Ollama запускается первой. Если она не завершила генерацию за
+10 секунд, параллельно запускается Groq; используется первый корректный ответ.
+Если Groq недоступен или исчерпал квоту, система продолжает ждать локальную
+модель.
 
-## Проверка
+После изменения `.env` пересоздайте backend:
+
+```powershell
+docker compose up -d --force-recreate backend
+```
+
+### Приватность
+
+В режиме `ollama` вопрос и контекст не покидают компьютер. В режимах `groq` и
+`hybrid` Groq может получить вопрос, системный prompt и выбранные RAG-фрагменты.
+Browser search, code execution и другие внешние tools в проекте не включены.
+
+AI-анализ метаданных PDF является отдельным процессом и использует Ollama даже
+при облачном провайдере интерактивного ассистента.
+
+## Обработка публикаций
+
+После загрузки PDF система:
+
+1. проверяет тип, размер и хеш файла;
+2. извлекает метаданные и предлагает совпадения из справочников;
+3. отправляет подтверждённую публикацию в Celery;
+4. извлекает текст, при необходимости запускает OCR;
+5. строит смысловые чанки и embeddings;
+6. сохраняет результаты и статус обработки в PostgreSQL.
+
+В очередь передаётся только `source_file_id`. Сам PDF читается worker из общего
+каталога `backend/uploads`. Redis используется как брокер задач, а состояние и
+ошибки сохраняются в PostgreSQL. Celery Beat проекту не требуется.
+
+Ограничения массовой загрузки: не более 20 PDF за запрос, до 50 МБ на один файл
+и до 300 МБ на пакет.
+
+## Настройки поиска
+
+Основные переменные находятся в `.env.example`.
+
+| Переменная | Значение по умолчанию | Назначение |
+|---|---:|---|
+| `EMBEDDING_MODEL_NAME` | `intfloat/multilingual-e5-base` | Модель embeddings |
+| `RERANKER_MODEL_NAME` | `BAAI/bge-reranker-v2-m3` | Cross-encoder reranker |
+| `RERANKER_MAX_LENGTH` | `768` | Максимальная длина пары для reranker |
+| `RERANKER_MIN_SCORE` | `0.5` | Минимальная оценка релевантности |
+| `RERANKER_TOP_K` | `6` | Максимум чанков в RAG-контексте |
+| `HYBRID_FALLBACK_DELAY_SECONDS` | `10` | Задержка запуска Groq в hybrid |
+
+После первой установки embedding- и reranker-модели скачиваются в общий Docker
+том `huggingface_cache`. Поэтому первый содержательный запрос может быть заметно
+дольше последующих.
+
+### Смена embedding-модели
+
+После изменения `EMBEDDING_MODEL_NAME` необходимо перестроить векторы всех
+чанков:
+
+```powershell
+docker compose exec backend python -m app.scripts.rebuild_embeddings
+```
+
+Скрипт удаляет векторы другой модели, поэтому поиск не смешивает embeddings от
+разных моделей. При смене только reranker перестраивать embeddings не нужно.
+
+## Разработка без полного Docker Compose
+
+Базу и Redis можно оставить в Docker:
+
+```powershell
+docker compose up -d db redis
+```
+
+Создайте виртуальное окружение и установите backend-зависимости:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r backend\requirements.txt
+$env:DATABASE_URL = "postgresql+asyncpg://postgres:nika@localhost:55432/digital_scientist"
+$env:CELERY_BROKER_URL = "redis://localhost:6379/0"
+```
+
+API:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\python.exe -m alembic upgrade head
+..\.venv\Scripts\python.exe -m uvicorn app.main:app --reload
+```
+
+Celery worker в отдельном терминале:
+
+```powershell
+Set-Location backend
+..\.venv\Scripts\celery.exe -A app.celery_app:celery_app worker --loglevel=INFO
+```
+
+Frontend в отдельном терминале:
+
+```powershell
+Set-Location frontend
+npm install
+npm run dev
+```
+
+## Тестирование
+
+Backend:
 
 ```powershell
 Set-Location backend
 ..\.venv\Scripts\python.exe -m pytest -q -p no:cacheprovider
-
-Set-Location ..\frontend
-npm.cmd test
-npm.cmd run build
 ```
 
-## Embedding-модели
-
-Основная модель задаётся через `EMBEDDING_MODEL_NAME` и по умолчанию равна
-`intfloat/multilingual-e5-base`. Для сравнения также поддерживается
-`sentence-transformers/paraphrase-multilingual-mpnet-base-v2`.
-
-После первой установки или смены модели пересоздайте векторы всех чанков:
+Frontend:
 
 ```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -m app.scripts.rebuild_embeddings
+Set-Location frontend
+npm test
+npm run build
 ```
 
-В Docker команда эквивалентна:
+## Evaluation и отчёты
 
-```bash
-docker compose exec backend python -m app.scripts.rebuild_embeddings
+Retrieval-набор находится в
+[`backend/benchmarks/retrieval_dataset.json`](backend/benchmarks/retrieval_dataset.json)
+и содержит 31 вручную проверенный вопрос категорий `semantic`, `exact`,
+`cross_language`, `no_answer` и `short_ambiguous`.
+
+Полный прогон vector search, FTS, RRF, relevance gate и reranker:
+
+```powershell
+docker compose exec backend python -m scripts.evaluate_retrieval
 ```
 
-Скрипт сначала удаляет векторы другой модели, поэтому поиск никогда не
-смешивает их. API дополнительно фильтрует чанки по активной модели.
+Для быстрого baseline без reranker:
 
-Сравнение E5 и прежней модели на фиксированном наборе вопросов запускается так:
+```powershell
+docker compose exec backend python -m scripts.evaluate_retrieval --skip-reranker
+```
+
+Сравнение embedding-моделей:
 
 ```powershell
 Set-Location backend
@@ -143,49 +335,75 @@ Set-Location backend
   --output benchmarks/results.json
 ```
 
-Отчёт содержит `Recall@5`, `Recall@10` и `MRR`. Первый запуск скачает обе
-модели в Hugging Face cache и может занять несколько минут.
+Итоговое историческое сравнение LLM доступно в
+[`backend/evaluation/final_model_comparison_report.html`](backend/evaluation/final_model_comparison_report.html).
+В нём зафиксирована конфигурация на момент benchmark, включая прежнюю задержку
+Groq fallback 35 секунд; текущая рабочая настройка — 10 секунд.
 
-## Гибридный поиск
+## Структура репозитория
 
-Поиск ассистента объединяет 30 результатов pgvector и 30 результатов
-PostgreSQL Full Text Search через Reciprocal Rank Fusion (`k=60`). После
-дедупликации в строгую проверку релевантности передаются лучшие 20 чанков.
-Прошедшие её фрагменты оценивает cross-encoder
-`BAAI/bge-reranker-v2-m3`; в контекст LLM попадают не более 8 результатов с
-нормализованной оценкой не ниже `RERANKER_MIN_SCORE`. Если ни один фрагмент не
-прошёл любую из двух проверок, ассистент возвращает «недостаточно информации»
-без вызова LLM.
-
-Модель reranker настраивается переменными `RERANKER_MODEL_NAME`,
-`RERANKER_BATCH_SIZE`, `RERANKER_MAX_LENGTH`, `RERANKER_MIN_SCORE` и
-`RERANKER_TOP_K`. При первом содержательном запросе модель скачивается в общий
-Hugging Face cache; пересоздавать embeddings после её смены не нужно.
-
-FTS-индекс создаётся миграцией и обновляется PostgreSQL автоматически при
-изменении `chunk_text`:
-
-```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -m alembic upgrade head
+```text
+digital-scientiest/
+├── backend/
+│   ├── app/                 # FastAPI, модели, поиск, RAG и фоновые задачи
+│   ├── migrations/          # миграции Alembic
+│   ├── benchmarks/          # фиксированные retrieval-наборы
+│   ├── evaluation/          # итоговый отчёт сравнения моделей
+│   ├── scripts/             # диагностические и evaluation-команды
+│   └── tests/               # backend-тесты
+├── frontend/
+│   ├── src/                 # React-приложение
+│   └── tests/               # frontend-тесты
+├── exports/                 # подготовленные выгрузки данных
+├── docker-compose.yml
+├── .env.example
+└── README.md
 ```
 
-Для диагностики каждого запроса в backend-логе выводятся `vector_results`,
-`full_text_results`, `rrf_results`, `reranked_chunks` и
-`final_selected_chunks`.
+## Частые проблемы
 
-## Evaluation production retrieval
+### Ассистент не подключается к Ollama
 
-В `backend/evaluation/retrieval_dataset.json` находится набор из 30 вручную
-проверенных вопросов к реальным `document_chunks`: semantic, exact,
-cross-language, no-answer и short/ambiguous. Один запуск сравнивает hybrid
-RRF, relevance gate и reranker по Recall@5, Recall@10, MRR, answerability
-accuracy, false positives и false negatives:
+Проверьте, что Ollama запущена и модель установлена:
 
 ```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -m scripts.evaluate_retrieval `
-  --output evaluation/results.json
+ollama list
+Invoke-RestMethod http://127.0.0.1:11434/api/tags
 ```
 
-Для baseline без загрузки reranker-модели добавьте `--skip-reranker`.
+Для Docker значение `OLLAMA_BASE_URL` должно быть
+`http://host.docker.internal:11434`.
+
+### Первый вопрос отвечает очень долго
+
+При первом запросе загружаются embedding-модель, reranker и LLM. Повторный
+запрос обычно быстрее. Посмотреть происходящее можно командой:
+
+```powershell
+docker compose logs -f backend
+```
+
+### После смены `.env` ничего не изменилось
+
+Пересоздайте контейнер:
+
+```powershell
+docker compose up -d --force-recreate backend celery-worker
+```
+
+### База не соответствует текущему коду
+
+Примените все миграции:
+
+```powershell
+docker compose exec backend alembic upgrade head
+```
+
+### PDF остаётся в очереди
+
+Проверьте Redis и worker:
+
+```powershell
+docker compose ps redis celery-worker
+docker compose logs --tail 200 celery-worker
+```
