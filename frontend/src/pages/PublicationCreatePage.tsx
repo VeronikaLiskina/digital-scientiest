@@ -8,13 +8,17 @@ import { publicationImportsApi } from "../api/publicationImportsApi";
 import { publicationsApi } from "../api/publicationsApi";
 import { sourceFilesApi } from "../api/sourceFilesApi";
 import { topicsApi } from "../api/topicsApi";
-import { MultiSelect } from "../components/common/MultiSelect";
 import { PageHeader } from "../components/common/PageHeader";
 import { PdfUpload } from "../components/files/PdfUpload";
-import { QuickCreateField } from "../components/publications/QuickCreateField";
+import { PublicationFormFields } from "../components/publications/PublicationFormFields";
 import type { Author, Keyword, SourceFile, Topic } from "../types/entities";
 import type { PublicationFormData } from "../types/forms";
-import { publicationTypeOptions } from "../utils/publicationTypes";
+import {
+  getMatchedIds,
+  getNewNames,
+  mergeById,
+  uniqueIds,
+} from "../utils/publicationForm";
 
 const emptyForm: PublicationFormData = {
   title: "",
@@ -32,20 +36,6 @@ const emptyForm: PublicationFormData = {
   topic_names: "",
   keyword_names: "",
 };
-
-function uniqueIds(ids: number[]) {
-  return Array.from(new Set(ids));
-}
-
-function mergeById<T extends { id: number }>(current: T[], incoming: T[]) {
-  const map = new Map<number, T>();
-
-  [...current, ...incoming].forEach((item) => {
-    map.set(item.id, item);
-  });
-
-  return Array.from(map.values());
-}
 
 type CatalogMatch = {
   id: number;
@@ -79,24 +69,6 @@ type ExtractedWithMatches = {
   matched_keywords?: CatalogMatch[];
   new_keywords?: string[];
 };
-
-function getMatchedIds(ids?: number[], matches?: CatalogMatch[]) {
-  if (ids?.length) {
-    return ids;
-  }
-
-  return matches?.map((item) => item.id) ?? [];
-}
-
-function getNewNames(newNames?: string[], fallbackNames?: string[]) {
-  if (newNames !== undefined) {
-    return newNames;
-  }
-
-  // fallback нужен, чтобы форма не ломалась со старым backend,
-  // где еще не было new_authors/new_keywords/new_topics.
-  return fallbackNames ?? [];
-}
 
 export function PublicationCreatePage() {
   const navigate = useNavigate();
@@ -311,78 +283,11 @@ export function PublicationCreatePage() {
         return;
       }
 
-      const matchedAuthorIds = getMatchedIds(extracted.matched_author_ids, extracted.matched_authors);
-      const matchedTopicIds = getMatchedIds(extracted.matched_topic_ids, extracted.matched_topics);
-      const matchedKeywordIds = getMatchedIds(extracted.matched_keyword_ids, extracted.matched_keywords);
-
-      const newAuthorNames = getNewNames(extracted.new_authors, extracted.authors);
-      const newTopicNames = getNewNames(extracted.new_topics, extracted.topics);
-      const newKeywordNames = getNewNames(extracted.new_keywords, extracted.keywords);
-
-      // Если matched_* есть в ответе, но этих записей еще нет в options,
-      // добавляем их локально, чтобы MultiSelect смог визуально показать выбор.
-      setAuthors((prev) =>
-        mergeById(
-          prev,
-          (extracted.matched_authors ?? []).map(
-            (author) =>
-              ({
-                id: author.id,
-                full_name: author.name,
-                organization: "",
-              }) as Author,
-          ),
-        ),
-      );
-
-      setTopics((prev) =>
-        mergeById(
-          prev,
-          (extracted.matched_topics ?? []).map(
-            (topic) =>
-              ({
-                id: topic.id,
-                name: topic.name,
-                description: "",
-              }) as Topic,
-          ),
-        ),
-      );
-
-      setKeywords((prev) =>
-        mergeById(
-          prev,
-          (extracted.matched_keywords ?? []).map(
-            (keyword) =>
-              ({
-                id: keyword.id,
-                name: keyword.name,
-              }) as Keyword,
-          ),
-        ),
-      );
-
+      applyExtractedMetadata(extracted);
       setFormData((prev) => ({
         ...prev,
-        title: extracted.title || prev.title,
-        year: extracted.year ? String(extracted.year) : prev.year,
-        language: extracted.language || prev.language,
-        publication_type: extracted.publication_type || prev.publication_type,
-        doi: extracted.doi || prev.doi,
         source_file_id: "",
-  import_item_id: "",
-
-        // Уже существующие записи сразу отмечаются в MultiSelect.
-        author_ids: uniqueIds([...prev.author_ids, ...matchedAuthorIds]),
-        topic_ids: uniqueIds([...prev.topic_ids, ...matchedTopicIds]),
-        keyword_ids: uniqueIds([...prev.keyword_ids, ...matchedKeywordIds]),
-
-        // Новые значения НЕ создаются в справочниках при выборе PDF.
-        // Они будут сохранены через get_or_create только после нажатия
-        // "Создать публикацию".
-        author_names: newAuthorNames.join("; "),
-        topic_names: newTopicNames.join("; "),
-        keyword_names: newKeywordNames.join("; "),
+        import_item_id: "",
       }));
 
       setMetadataReviewStatus("needs_review");
@@ -483,159 +388,18 @@ export function PublicationCreatePage() {
             </label>
           </div>
 
-          <label>
-            Название *
-            <input
-              className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
-              value={formData.title}
-              onChange={(event) => updateForm("title", event.target.value)}
-              placeholder="Название публикации"
-            />
-          </label>
-
-          <div className="form-grid">
-            <label>
-              Год
-              <input
-                value={formData.year}
-                onChange={(event) => updateForm("year", event.target.value)}
-                placeholder="2024"
-              />
-            </label>
-
-            <label>
-              Язык
-              <select
-                value={formData.language}
-                onChange={(event) => updateForm("language", event.target.value)}
-              >
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
-              </select>
-            </label>
-
-            <label>
-              Тип
-              <select
-                value={formData.publication_type}
-                onChange={(event) => updateForm("publication_type", event.target.value)}
-              >
-                {publicationTypeOptions.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Статус
-              <select
-                value={formData.status}
-                onChange={(event) => updateForm("status", event.target.value)}
-              >
-                <option value="draft">Черновик</option>
-                <option value="review">На проверке</option>
-                <option value="processed">Обработано</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            DOI
-            <input
-              value={formData.doi}
-              onChange={(event) => updateForm("doi", event.target.value)}
-              placeholder="10.1234/example"
-            />
-          </label>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Авторы"
-              values={formData.author_ids}
-              options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
-              onChange={(values) => updateForm("author_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните ФИО автора"
-              placeholder="Новый автор"
-              buttonText="+ Добавить автора"
-              onCreate={handleCreateAuthor}
-            />
-
-            <label>
-              Авторы из PDF
-              <textarea
-                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
-                rows={3}
-                value={formData.author_names}
-                onChange={(event) => updateForm("author_names", event.target.value)}
-                placeholder="Демонтерова Е.И.; Левицкий И.В.; Иванов А.В."
-              />
-              <span className="muted">
-                Проверьте предложенных авторов: удалите ошибочные значения или исправьте написание перед сохранением.
-              </span>
-            </label>
-          </div>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Темы"
-              values={formData.topic_ids}
-              options={topics.map((topic) => ({ id: topic.id, label: topic.name }))}
-              onChange={(values) => updateForm("topic_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните название темы"
-              placeholder="Новая тема"
-              buttonText="+ Добавить тему"
-              onCreate={handleCreateTopic}
-            />
-
-            <label>
-              Темы из PDF
-              <textarea
-                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
-                rows={2}
-                value={formData.topic_names}
-                onChange={(event) => updateForm("topic_names", event.target.value)}
-                placeholder="Островодужные базальты; Платиновая группа"
-              />
-              <span className="muted">
-                Проверьте предложенные темы: оставьте только подходящие для публикации.
-              </span>
-            </label>
-          </div>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Ключевые слова"
-              values={formData.keyword_ids}
-              options={keywords.map((keyword) => ({ id: keyword.id, label: keyword.name }))}
-              onChange={(values) => updateForm("keyword_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните ключевое слово"
-              placeholder="Новое ключевое слово"
-              buttonText="+ Добавить ключевое слово"
-              onCreate={handleCreateKeyword}
-            />
-
-            <label>
-              Ключевые слова из PDF
-              <textarea
-                className={metadataReviewStatus === "needs_review" ? "auto-filled-field" : undefined}
-                rows={3}
-                value={formData.keyword_names}
-                onChange={(event) => updateForm("keyword_names", event.target.value)}
-                placeholder="островодужные базальты; элементы платиновой группы; geochemistry"
-              />
-              <span className="muted">
-                Разделяйте значения точкой с запятой, запятой или переносом строки.
-              </span>
-            </label>
-          </div>
+          <PublicationFormFields
+            formData={formData}
+            authors={authors}
+            topics={topics}
+            keywords={keywords}
+            onChange={updateForm}
+            onCreateAuthor={handleCreateAuthor}
+            onCreateTopic={handleCreateTopic}
+            onCreateKeyword={handleCreateKeyword}
+            showExtractedFields
+            highlightExtracted={metadataReviewStatus === "needs_review"}
+          />
 
           <div className="form-actions">
             <button className="button" type="submit" disabled={isSaving || isExtractingMetadata}>

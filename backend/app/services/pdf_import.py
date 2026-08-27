@@ -1,20 +1,17 @@
 from collections import Counter
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 import re
-from uuid import uuid4
-
-from fastapi import HTTPException, UploadFile
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.models.source_file import SourceFile
 from app.services.ai_publication_analysis_service import analyze_publication_text
 from app.services.pdf_text_extraction import extract_pdf_pages
-from app.utils.file_hash import calculate_file_hash
+from app.services.publication_metadata_models import (
+    ExtractedPublicationMetadata,
+    PageText,
+    TitleMatch,
+)
 
 try:
     import pymorphy3
@@ -305,119 +302,6 @@ LAST_NAME_MAP = {
 
 
 
-@dataclass
-class ExtractedPublicationMetadata:
-    title: str | None
-    year: int | None
-    language: str | None
-    publication_type: str | None
-    doi: str | None
-    authors: list[str]
-    keywords: list[str]
-    topics: list[str]
-    title_source: str = "unknown"
-    title_confidence: str = "low"
-    title_warning: str | None = None
-
-
-@dataclass
-class PageText:
-    number: int
-    text: str
-    lines: list[str]
-
-
-@dataclass
-class TitleMatch:
-    title: str
-    page_index: int
-    line_index: int | None
-    score: int
-    source: str = "pdf"
-
-
-def validate_pdf_upload(file: UploadFile) -> str:
-    original_name = file.filename or "publication.pdf"
-    file_extension = Path(original_name).suffix.lower()
-
-    if file_extension != ".pdf":
-        raise HTTPException(
-            status_code=400,
-            detail="Only PDF files are allowed",
-        )
-
-    return original_name
-
-
-def save_pdf_content(original_name: str, content: bytes) -> Path:
-    if not content:
-        raise HTTPException(status_code=400, detail="Файл пустой")
-
-    upload_dir = Path(settings.upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
-
-    saved_name = f"{uuid4()}.pdf"
-    saved_path = upload_dir / saved_name
-    saved_path.write_bytes(content)
-
-    return saved_path
-
-
-async def find_source_file_by_hash(
-    db: AsyncSession,
-    file_hash: str,
-) -> SourceFile | None:
-    result = await db.execute(
-        select(SourceFile).where(SourceFile.file_hash == file_hash)
-    )
-    return result.scalar_one_or_none()
-
-
-async def save_uploaded_pdf_as_source_file(
-    db: AsyncSession,
-    file: UploadFile,
-    *,
-    comment: str | None = None,
-    fail_on_duplicate: bool = True,
-) -> tuple[SourceFile, bool]:
-    original_name = validate_pdf_upload(file)
-    content = await file.read()
-
-    if not content:
-        raise HTTPException(status_code=400, detail="Файл пустой")
-
-    file_hash = calculate_file_hash(content)
-    existing_file = await find_source_file_by_hash(db, file_hash)
-
-    if existing_file is not None:
-        if fail_on_duplicate:
-            raise HTTPException(
-                status_code=409,
-                detail="Такой PDF уже загружался",
-            )
-
-        return existing_file, True
-
-    saved_path = save_pdf_content(original_name, content)
-
-    source_file = SourceFile(
-        file_name=original_name,
-        file_path=str(saved_path),
-        file_type="application/pdf",
-        file_hash=file_hash,
-        pdf_quality="text_pdf",
-        has_figures=False,
-        has_tables=False,
-        processing_status="new",
-        comment=comment,
-    )
-
-    db.add(source_file)
-    await db.flush()
-
-    return source_file, False
-
-
 def _clean_metadata_line(line: str) -> str:
     line = line.replace("\u00a0", " ")
     line = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", line)
@@ -632,15 +516,6 @@ def _title_tokens(title: str) -> list[str]:
         for token in _normalize_for_search(title).split()
         if len(token) >= 3 and token not in stop_words
     ]
-
-
-def _title_token_overlap(title: str | None, filename_title: str | None) -> int:
-    if not title or not filename_title:
-        return 0
-
-    filename_tokens = set(_title_tokens(filename_title)[:10])
-    title_tokens = set(_title_tokens(title))
-    return len(filename_tokens & title_tokens)
 
 
 def _should_prefer_filename_title(
@@ -2520,21 +2395,6 @@ def _extract_frequent_phrases(
     return _dedupe_phrases(phrases)[:limit]
 
 
-def _extract_keywords_from_frequency(
-    text: str,
-    *,
-    title: str | None,
-    language: str | None,
-) -> list[str]:
-    return _extract_frequent_phrases(
-        text,
-        title=title,
-        language=language,
-        limit=10,
-        min_frequency=2,
-    )
-
-
 def _extract_keywords_from_focused_text(
     text: str,
     *,
@@ -2854,24 +2714,6 @@ def _ai_field_confidence(analysis, field_name: str, default: float = 0.0) -> flo
         return default
 
     return metadata.confidence
-
-
-def _ai_provenance(analysis) -> tuple[dict[str, float], dict[str, str], dict[str, int]]:
-    confidence: dict[str, float] = {}
-    evidence: dict[str, str] = {}
-    pages: dict[str, int] = {}
-
-    for field_name, metadata in analysis.field_metadata.items():
-        if metadata.confidence is not None:
-            confidence[field_name] = metadata.confidence
-
-        if metadata.evidence:
-            evidence[field_name] = metadata.evidence
-
-        if metadata.page is not None:
-            pages[field_name] = metadata.page
-
-    return confidence, evidence, pages
 
 
 def _merge_ai_list_if_confident(

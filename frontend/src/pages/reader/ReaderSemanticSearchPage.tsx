@@ -84,7 +84,7 @@ export function ReaderSemanticSearchPage() {
           )}
         </div>
 
-        {error && <p className="message message--error">{error}</p>}
+        {error && <p className="reader-assistant__error error">{error}</p>}
 
         <div className="reader-assistant__answer">
           {response ? (

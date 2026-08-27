@@ -11,6 +11,11 @@
 @use "./components/card";
 @use "./components/home-card";
 @use "./components/form";
+@use "./components/publication-form";
+@use "./components/pdf-upload";
+@use "./components/pdf-automation";
+@use "./components/multi-select";
+@use "./components/quick-create";
 @use "./components/table";
 @use "./components/status";
 @use "./components/dictionary-card";
@@ -20,3 +25,5 @@
 @use "./pages/publications";
 @use "./pages/publication-details";
 @use "./pages/reader";
+@use "./pages/reader-assistant";
+@use "./pages/reader-source";

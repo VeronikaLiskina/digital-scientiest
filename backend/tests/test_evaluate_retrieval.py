@@ -3,7 +3,6 @@ import json
 import pytest
 
 from scripts.evaluate_retrieval import (
-    DEFAULT_DATASET,
     EvaluationItem,
     build_report,
     calculate_metrics,
@@ -97,24 +96,6 @@ def test_load_dataset_validates_answerability_contract(tmp_path):
 
     with pytest.raises(ValueError, match="disagree"):
         load_dataset(dataset)
-
-
-def test_project_dataset_has_expected_size_categories_and_unique_questions():
-    items = load_dataset(DEFAULT_DATASET)
-
-    category_counts = {
-        category: sum(item.category == category for item in items)
-        for category in {item.category for item in items}
-    }
-    assert len(items) == 31
-    assert category_counts == {
-        "semantic": 11,
-        "exact": 7,
-        "cross_language": 5,
-        "no_answer": 5,
-        "short_ambiguous": 3,
-    }
-    assert len({item.question.casefold() for item in items}) == len(items)
 
 
 def test_report_contains_stage_metrics_categories_and_failure_details(tmp_path):

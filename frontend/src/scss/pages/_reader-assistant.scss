@@ -1,0 +1,103 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.reader-assistant {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.reader-assistant__textarea {
+  min-height: 142px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.reader-assistant__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.reader-assistant__query {
+  color: $muted;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.reader-assistant__error {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+}
+
+.reader-assistant__answer {
+  min-height: 190px;
+  padding: 20px;
+  border: 1px solid $border;
+  border-radius: $radius-md;
+  background: linear-gradient(180deg, #f9fbff 0%, #ffffff 100%);
+
+  p {
+    margin: 0;
+  }
+}
+
+.reader-assistant__results {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.reader-assistant__results_plain {
+  margin-top: 0;
+}
+
+.reader-assistant__result {
+  padding: 16px;
+  border: 1px solid $border;
+  border-radius: $radius-sm;
+  background: $surface;
+  box-shadow: 0 8px 24px rgba(31, 50, 88, 0.04);
+
+  p {
+    margin-top: 10px;
+    color: $text;
+    line-height: 1.55;
+  }
+}
+
+.reader-assistant__result-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  color: $muted;
+  font-size: 13px;
+  line-height: 1.35;
+
+  > div {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.reader-assistant__source {
+  color: $primary;
+  font-weight: 800;
+}
+
+@include respond-mobile {
+  .reader-assistant__actions,
+  .reader-assistant__result-header {
+    flex-direction: column;
+  }
+
+  .reader-assistant__answer {
+    padding: 16px;
+  }
+}

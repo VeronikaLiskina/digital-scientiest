@@ -22,12 +22,12 @@
   }
 }
 
-.dictionary-page__list-section {
+.dictionary-list {
   width: 100%;
   max-width: none;
 }
 
-.dictionary-list {
+.dictionary-list__items {
   display: flex;
   flex-direction: column;
   gap: 14px;
@@ -35,7 +35,7 @@
   max-width: none;
 }
 
-.dictionary-page__show-more {
+.dictionary-list__show-more {
   margin-top: 16px;
 }
 

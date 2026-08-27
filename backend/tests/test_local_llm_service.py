@@ -340,6 +340,9 @@ def test_rag_prompt_contains_language_guardrails_and_source_metadata():
     assert "Не смешивай языки" in prompt
     assert "Целевой уровень полноты ответа — не менее 100 %" in prompt
     assert "Первый смысловой блок должен прямо" in prompt
+    assert "последовательно раскрой все найденные аспекты темы" in prompt
+    assert "не ограничивай ответ заранее одним-двумя предложениями" in prompt
+    assert "При узком вопросе не расширяй ответ искусственно" in prompt
     assert "не сокращай их до одной общей фразы" in prompt
     assert "Не добивай объём повторами" in prompt
     assert "не добавляй список литературы" in prompt.lower()
@@ -1351,9 +1354,13 @@ async def test_assistant_searches_original_and_automatically_translated_queries(
 
     class AcceptingReranker:
         seen_questions: list[str] = []
+        seen_chunk_ids: list[list[int]] = []
 
         def rerank(self, question, chunks, *, limit):
             self.seen_questions.append(question)
+            self.seen_chunk_ids.append(
+                [chunk["chunk_id"] for chunk in chunks]
+            )
             return [{**chunks[0], "reranker_score": 0.99}][:limit]
 
     class AnsweringLLMService:
@@ -1383,7 +1390,8 @@ async def test_assistant_searches_original_and_automatically_translated_queries(
 
     assert len(BilingualRepository.queries) == 2
     assert BilingualRepository.queries[1].startswith("What two")
-    assert reranker.seen_questions == BilingualRepository.queries
+    assert reranker.seen_questions == [BilingualRepository.queries[1]]
+    assert reranker.seen_chunk_ids == [[3849, 990]]
     assert result["answer"] == "Выделены этапы 8 и 4 млн лет."
     assert [source["publication_id"] for source in result["sources"]] == [52]
 

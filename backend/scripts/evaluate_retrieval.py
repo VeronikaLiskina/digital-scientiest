@@ -32,9 +32,6 @@ from app.services.source_relevance import (
 )
 
 
-DEFAULT_DATASET = (
-    Path(__file__).resolve().parents[1] / "benchmarks" / "retrieval_dataset.json"
-)
 ALLOWED_CATEGORIES = {
     "semantic",
     "exact",
@@ -812,7 +809,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Evaluate vector, FTS, RRF, relevance gate, and reranker stages."
     )
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        required=True,
+        help="Path to a retrieval evaluation dataset in JSON format.",
+    )
     parser.add_argument("--candidate-limit", type=int, default=HYBRID_TOP_K)
     parser.add_argument("--reranker-limit", type=int, default=8)
     parser.add_argument("--min-similarity", type=float, default=0.55)

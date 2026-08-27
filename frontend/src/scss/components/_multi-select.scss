@@ -1,0 +1,111 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.multi-select {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+  }
+
+  &__label {
+    font-weight: 700;
+    color: $text-soft;
+  }
+
+  &__clear,
+  &__toggle {
+    border: 0;
+    background: transparent;
+    color: $primary;
+    font-weight: 700;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  &__search {
+    width: 100%;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__chip {
+    min-height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: $primary-soft;
+    color: $text;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+
+    span {
+      color: $muted;
+      font-size: 18px;
+      line-height: 1;
+    }
+  }
+
+  &__list {
+    max-height: 260px;
+    overflow: auto;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px;
+    border: 1px solid #d7e1ee;
+    border-radius: 16px;
+    background: #f9fbff;
+  }
+
+  &__option {
+    min-width: 0;
+    padding: 10px;
+    border-radius: 12px;
+    background: white;
+    border: 1px solid $border;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 10px !important;
+    font-weight: 600 !important;
+    cursor: pointer;
+
+    input {
+      width: 16px;
+      height: 16px;
+      flex-shrink: 0;
+      padding: 0;
+    }
+
+    span {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
+
+  &__empty {
+    margin: 0;
+    color: $muted;
+  }
+
+  @include respond-tablet {
+    &__list {
+      grid-template-columns: 1fr;
+    }
+  }
+}

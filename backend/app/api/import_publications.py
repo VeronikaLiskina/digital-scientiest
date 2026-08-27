@@ -16,10 +16,8 @@ from app.schemas.import_publication import (
 )
 from app.services.author_resolver import get_or_create_author
 from app.services.keyword_resolver import get_or_create_keyword
-from app.services.pdf_import import (
-    extract_publication_metadata_from_pdf,
-    save_uploaded_pdf_as_source_file,
-)
+from app.services.pdf_import import extract_publication_metadata_from_pdf
+from app.services.pdf_storage_service import save_uploaded_pdf_as_source_file
 from app.services.pdf_processing_queue import enqueue_pdf_processing
 from app.services.topic_resolver import get_or_create_topic
 

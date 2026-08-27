@@ -8,12 +8,15 @@ import { publicationsApi } from "../api/publicationsApi";
 import { sourceFilesApi } from "../api/sourceFilesApi";
 import type { ExtractedPublicationMetadata } from "../api/sourceFilesApi";
 import { topicsApi } from "../api/topicsApi";
-import { MultiSelect } from "../components/common/MultiSelect";
 import { PageHeader } from "../components/common/PageHeader";
-import { QuickCreateField } from "../components/publications/QuickCreateField";
+import { PublicationFormFields } from "../components/publications/PublicationFormFields";
 import type { Author, Keyword, SourceFile, Topic } from "../types/entities";
 import type { PublicationFormData } from "../types/forms";
-import { publicationTypeOptions } from "../utils/publicationTypes";
+import {
+  mergeIds,
+  mergeNames,
+  pickExtractedValue,
+} from "../utils/publicationForm";
 
 const emptyForm: PublicationFormData = {
   title: "",
@@ -30,38 +33,6 @@ const emptyForm: PublicationFormData = {
   topic_names: "",
   keyword_names: "",
 };
-
-function mergeIds(current: number[], incoming?: number[]) {
-  return Array.from(new Set([...current, ...(incoming ?? [])]));
-}
-
-function mergeNames(current: string, incoming?: string[]) {
-  const values = [
-    ...current
-      .split(/[;,\n]/)
-      .map((item) => item.trim())
-      .filter(Boolean),
-    ...(incoming ?? []),
-  ];
-
-  return Array.from(new Set(values)).join("\n");
-}
-
-function pickExtractedValue(
-  current: string,
-  incoming: string | number | null | undefined,
-  emptyOnly: boolean,
-) {
-  if (incoming === null || incoming === undefined || incoming === "") {
-    return current;
-  }
-
-  if (emptyOnly && current.trim()) {
-    return current;
-  }
-
-  return String(incoming);
-}
 
 function renderMetadataList(title: string, values?: string[]) {
   const preparedValues = (values ?? []).filter(Boolean);
@@ -376,116 +347,16 @@ export function PublicationEditPage() {
             </div>
           )}
 
-          <label>
-            Название *
-            <input
-              value={formData.title}
-              onChange={(event) => updateForm("title", event.target.value)}
-              placeholder="Название публикации"
-            />
-          </label>
-
-          <div className="form-grid">
-            <label>
-              Год
-              <input
-                value={formData.year}
-                onChange={(event) => updateForm("year", event.target.value)}
-                placeholder="2024"
-              />
-            </label>
-
-            <label>
-              Язык
-              <select
-                value={formData.language}
-                onChange={(event) => updateForm("language", event.target.value)}
-              >
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
-              </select>
-            </label>
-
-            <label>
-              Тип
-              <select
-                value={formData.publication_type}
-                onChange={(event) => updateForm("publication_type", event.target.value)}
-              >
-                {publicationTypeOptions.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              Статус
-              <select
-                value={formData.status}
-                onChange={(event) => updateForm("status", event.target.value)}
-              >
-                <option value="draft">Черновик</option>
-                <option value="review">На проверке</option>
-                <option value="processed">Обработано</option>
-              </select>
-            </label>
-          </div>
-
-          <label>
-            DOI
-            <input
-              value={formData.doi}
-              onChange={(event) => updateForm("doi", event.target.value)}
-              placeholder="10.1234/example"
-            />
-          </label>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Авторы"
-              values={formData.author_ids}
-              options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
-              onChange={(values) => updateForm("author_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните ФИО автора"
-              placeholder="Новый автор"
-              buttonText="+ Добавить автора"
-              onCreate={handleCreateAuthor}
-            />
-          </div>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Темы"
-              values={formData.topic_ids}
-              options={topics.map((topic) => ({ id: topic.id, label: topic.name }))}
-              onChange={(values) => updateForm("topic_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните название темы"
-              placeholder="Новая тема"
-              buttonText="+ Добавить тему"
-              onCreate={handleCreateTopic}
-            />
-          </div>
-
-          <div className="publication-form-section">
-            <MultiSelect
-              label="Ключевые слова"
-              values={formData.keyword_ids}
-              options={keywords.map((keyword) => ({ id: keyword.id, label: keyword.name }))}
-              onChange={(values) => updateForm("keyword_ids", values)}
-            />
-            <QuickCreateField
-              label="Заполните ключевое слово"
-              placeholder="Новое ключевое слово"
-              buttonText="+ Добавить ключевое слово"
-              onCreate={handleCreateKeyword}
-            />
-          </div>
+          <PublicationFormFields
+            formData={formData}
+            authors={authors}
+            topics={topics}
+            keywords={keywords}
+            onChange={updateForm}
+            onCreateAuthor={handleCreateAuthor}
+            onCreateTopic={handleCreateTopic}
+            onCreateKeyword={handleCreateKeyword}
+          />
 
           <div className="form-actions">
             <button className="button" type="submit" disabled={isSaving}>

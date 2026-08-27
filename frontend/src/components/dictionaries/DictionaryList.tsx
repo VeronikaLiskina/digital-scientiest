@@ -24,10 +24,10 @@ export function DictionaryList({ items, emptyText, onEdit, onDelete }: Dictionar
   const hiddenCount = items.length - VISIBLE_COUNT;
 
   return (
-    <section className="dictionary-page__list-section">
+    <section className="dictionary-list">
       <ListTitle count={items.length} />
 
-      <div className="dictionary-list">
+      <div className="dictionary-list__items">
         {visibleItems.map((item) => (
           <DictionaryCard
             key={item.id}
@@ -43,7 +43,7 @@ export function DictionaryList({ items, emptyText, onEdit, onDelete }: Dictionar
 
       {items.length > VISIBLE_COUNT && (
         <button
-          className="button button_secondary dictionary-page__show-more"
+          className="button button_secondary dictionary-list__show-more"
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}
         >

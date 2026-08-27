@@ -29,6 +29,8 @@ from app.services.metadata_matcher import (
 from app.services.pdf_import import (
     extract_publication_metadata_from_bytes,
     extract_publication_metadata_from_pdf,
+)
+from app.services.pdf_storage_service import (
     find_source_file_by_hash,
     save_uploaded_pdf_as_source_file,
     validate_pdf_upload,

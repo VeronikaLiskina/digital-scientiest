@@ -17,8 +17,8 @@ from app.services.metadata_matcher import (
     match_existing_keywords,
     match_existing_topics,
 )
-from app.services.pdf_import import (
-    extract_publication_metadata_from_pdf,
+from app.services.pdf_import import extract_publication_metadata_from_pdf
+from app.services.pdf_storage_service import (
     find_source_file_by_hash,
     save_pdf_content,
     validate_pdf_upload,

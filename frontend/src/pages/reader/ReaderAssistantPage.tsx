@@ -255,7 +255,7 @@ export function ReaderAssistantPage() {
           <div className="chat-sidebar__list">
             {chats.map((chat) => (
               <div
-                className={`chat-sidebar__item ${activeChat?.id === chat.id ? "is-active" : ""}`}
+                className={`chat-sidebar__item${activeChat?.id === chat.id ? " chat-sidebar__item_active" : ""}`}
                 key={chat.id}
               >
                 <button type="button" onClick={() => openChat(chat.id)}>
@@ -285,7 +285,7 @@ export function ReaderAssistantPage() {
               </div>
             ) : (
               activeChat.messages.map((message) => (
-                <article className={`chat-message chat-message--${message.role}`} key={message.id}>
+                <article className={`chat-message chat-message_${message.role}`} key={message.id}>
                   <span className="chat-message__role">
                     {message.role === "user" ? "Вы" : "Ассистент"}
                   </span>
@@ -313,7 +313,7 @@ export function ReaderAssistantPage() {
                     </div>
                   )}
                   {message.role === "assistant" && message.answer_origin === "external" && (
-                    <div className="chat-message__notice chat-message__notice--external" role="alert">
+                    <div className="chat-message__notice chat-message__notice_external" role="alert">
                       <span aria-hidden="true">!</span>
                       <div>
                         <strong>Информация из внешнего источника</strong>
@@ -325,8 +325,8 @@ export function ReaderAssistantPage() {
               ))
             )}
             {isLoading && (
-              <div className="chat-message chat-message--assistant chat-message--loading">
-                <span className="reader-assistant__spinner" aria-hidden="true" />
+              <div className="chat-message chat-message_assistant chat-message_loading">
+                <span className="chat-message__spinner" aria-hidden="true" />
                 <span>Ассистент готовит ответ…</span>
               </div>
             )}

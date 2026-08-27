@@ -16,7 +16,7 @@ RAG-подходу: сначала находит подходящие фраг�
 - автоматический поиск между русскими и английскими публикациями;
 - локальная генерация через Ollama, облачная через Groq или гибридный режим;
 - очередь фоновой обработки PDF и журнал ошибок;
-- воспроизводимые retrieval- и model-evaluation тесты.
+- автоматические тесты API, поиска, обработки PDF и логики ассистента.
 
 ## Как устроен проект
 
@@ -35,6 +35,14 @@ flowchart LR
     RERANK --> LLM[Ollama / Groq / Hybrid]
     LLM --> UI
 ```
+
+Код разделён по ответственности: `api` принимает HTTP-запросы,
+`repositories` работают с базой, а `services` реализуют процессы приложения.
+Например, `AssistantRetrievalService` полностью ведёт конвейер поиска, а
+`PdfStorageService` — проверку, дедупликацию и сохранение PDF. Зависимости этих
+сервисов передаются снаружи, поэтому отдельные этапы можно тестировать и менять
+без переписывания API. Общие поля frontend-форм и чистые функции обработки
+данных также вынесены из страниц в `components` и `utils`.
 
 ### Основные технологии
 
@@ -127,13 +135,13 @@ docker compose down
    30 чанков.
 4. Relevance gate отбрасывает фрагменты без достаточных текстовых или
    семантических признаков.
-5. Cross-encoder `bge-reranker-v2-m3` переоценивает оставшиеся пары
+5. Если первый поиск слабый, вопрос автоматически переводится на другой язык
+   и выполняется дополнительный поиск. Исходные и переведённые кандидаты
+   объединяются и очищаются от дубликатов. При сильном первом результате
+   повторный поиск пропускается.
+6. Cross-encoder `bge-reranker-v2-m3` один раз переоценивает общий список пар
    «вопрос — фрагмент». В итоговый контекст попадает не более 6 чанков с
    оценкой не ниже `0.5`.
-6. Если первый поиск слабый, вопрос автоматически переводится на другой язык
-   и выполняется дополнительный поиск. Это позволяет задавать русские вопросы
-   к английским статьям и наоборот. При сильном первом результате повторный
-   поиск пропускается.
 7. LLM получает только проверенные фрагменты. Ответ проходит валидацию языка,
    JSON-структуры и ссылок на реально использованные `chunk_id`.
 
@@ -181,7 +189,7 @@ docker compose run --rm -e LLM_PROVIDER=groq backend `
 
 ```env
 LLM_PROVIDER=hybrid
-HYBRID_FALLBACK_DELAY_SECONDS=10
+HYBRID_FALLBACK_DELAY_SECONDS=15
 ```
 
 В этом режиме Ollama запускается первой. Если она не завершила генерацию за
@@ -233,7 +241,7 @@ AI-анализ метаданных PDF является отдельным п�
 | `RERANKER_MAX_LENGTH` | `768` | Максимальная длина пары для reranker |
 | `RERANKER_MIN_SCORE` | `0.5` | Минимальная оценка релевантности |
 | `RERANKER_TOP_K` | `6` | Максимум чанков в RAG-контексте |
-| `HYBRID_FALLBACK_DELAY_SECONDS` | `10` | Задержка запуска Groq в hybrid |
+| `HYBRID_FALLBACK_DELAY_SECONDS` | `15` | Задержка запуска Groq в hybrid |
 
 После первой установки embedding- и reranker-модели скачиваются в общий Docker
 том `huggingface_cache`. Поэтому первый содержательный запрос может быть заметно
@@ -308,37 +316,23 @@ npm test
 npm run build
 ```
 
-## Evaluation и отчёты
+## Проверка retrieval на своём наборе
 
-Retrieval-набор находится в
-[`backend/benchmarks/retrieval_dataset.json`](backend/benchmarks/retrieval_dataset.json)
-и содержит 31 вручную проверенный вопрос категорий `semantic`, `exact`,
-`cross_language`, `no_answer` и `short_ambiguous`.
-
-Полный прогон vector search, FTS, RRF, relevance gate и reranker:
+Диагностический скрипт может отдельно измерить vector search, FTS, RRF,
+relevance gate и reranker. Путь к проверенному JSON-набору передаётся явно:
 
 ```powershell
-docker compose exec backend python -m scripts.evaluate_retrieval
+Set-Location backend
+..\.venv\Scripts\python.exe -m scripts.evaluate_retrieval `
+  --dataset C:\path\to\retrieval_dataset.json
 ```
 
 Для быстрого baseline без reranker:
 
 ```powershell
-docker compose exec backend python -m scripts.evaluate_retrieval --skip-reranker
+..\.venv\Scripts\python.exe -m scripts.evaluate_retrieval `
+  --dataset C:\path\to\retrieval_dataset.json --skip-reranker
 ```
-
-Сравнение embedding-моделей:
-
-```powershell
-Set-Location backend
-..\.venv\Scripts\python.exe -m benchmarks.compare_embedding_models `
-  --output benchmarks/results.json
-```
-
-Итоговое историческое сравнение LLM доступно в
-[`backend/evaluation/final_model_comparison_report.html`](backend/evaluation/final_model_comparison_report.html).
-В нём зафиксирована конфигурация на момент benchmark, включая прежнюю задержку
-Groq fallback 35 секунд; текущая рабочая настройка — 10 секунд.
 
 ## Структура репозитория
 
@@ -346,15 +340,15 @@ Groq fallback 35 секунд; текущая рабочая настройка 
 digital-scientiest/
 ├── backend/
 │   ├── app/                 # FastAPI, модели, поиск, RAG и фоновые задачи
+│   │   ├── api/             # тонкий HTTP-слой
+│   │   ├── services/        # процессы и объектные сервисы
+│   │   └── repositories/    # запросы к хранилищу
 │   ├── migrations/          # миграции Alembic
-│   ├── benchmarks/          # фиксированные retrieval-наборы
-│   ├── evaluation/          # итоговый отчёт сравнения моделей
 │   ├── scripts/             # диагностические и evaluation-команды
 │   └── tests/               # backend-тесты
 ├── frontend/
 │   ├── src/                 # React-приложение
 │   └── tests/               # frontend-тесты
-├── exports/                 # подготовленные выгрузки данных
 ├── docker-compose.yml
 ├── .env.example
 └── README.md

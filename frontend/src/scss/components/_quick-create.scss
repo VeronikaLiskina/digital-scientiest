@@ -1,0 +1,17 @@
+@use "../abstracts/mixins" as *;
+
+.quick-create {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+
+  &__error {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  @include respond-mobile {
+    grid-template-columns: 1fr;
+  }
+}

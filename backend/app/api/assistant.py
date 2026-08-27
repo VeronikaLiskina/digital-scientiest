@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import re
 from datetime import datetime, timezone
@@ -12,28 +11,31 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.dependencies import get_embedding_service, get_reranker_service
 from app.models.chat import Chat, ChatMessage
-from app.repositories.semantic_search_repository import (
-    HYBRID_TOP_K,
-    SemanticSearchRepository,
-)
+from app.repositories.semantic_search_repository import SemanticSearchRepository
 from app.schemas.assistant import (
     AssistantAskRequest,
     AssistantAskResponse,
     ChatCreate,
     ChatDetail,
     ChatMessageCreate,
-    ChatMessageRead,
     ChatRead,
     ChatReply,
 )
-from app.services.embedding_service import EmbeddingService
-from app.services.assistant_answer_service import (
-    answer_text_from_blocks,
-    parse_structured_rag_answer,
-    question_requests_bibliography,
-    single_answer_block,
-    validate_human_answer,
+from app.services.assistant_answer_service import single_answer_block
+from app.services.assistant_catalog_service import (
+    answer_database_question as _answer_database_question,
 )
+from app.services.assistant_chat_service import (
+    build_conversation as _build_conversation,
+    chat_detail as _chat_detail,
+    chat_read as _chat_read,
+    message_read as _message_read,
+)
+from app.services.assistant_generation_service import (
+    AssistantGenerationService,
+    build_answer_sources as _build_answer_sources,
+)
+from app.services.embedding_service import EmbeddingService
 from app.services.local_llm_service import (
     LLMConfigurationError,
     LLMGenerationError,
@@ -44,47 +46,16 @@ from app.services.local_llm_service import (
     LocalLLMService,
     detect_question_language,
 )
-from app.services.prompt_builder import build_rag_context, build_rag_prompt
+from app.services.assistant_retrieval_service import (
+    AssistantRetrievalService,
+)
 from app.services.reranker_service import RerankerError, RerankerService
-from app.services.source_relevance import (
-    diversify_chunks_by_publication,
-    filter_relevant_sources,
-)
-from app.services.publication_query_service import (
-    DESCRIPTION_UNAVAILABLE,
-    build_described_publication_catalog_answer,
-    build_publication_catalog_answer,
-    build_publication_count_answer,
-    count_publications,
-    get_publication_catalog,
-    get_representative_descriptions,
-    is_publication_catalog_question,
-    is_publication_catalog_with_descriptions_question,
-    is_publication_count_question,
-)
 
 
 router = APIRouter(prefix="/assistant", tags=["Assistant"])
 logger = logging.getLogger(__name__)
 
 CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
-MIN_BILINGUAL_FALLBACK_CHUNKS = 2
-MIN_BILINGUAL_FALLBACK_SCORE = 0.7
-MIN_TRANSLATED_SEMANTIC_SIMILARITY = 0.8
-MAX_TRANSLATED_SEMANTIC_CANDIDATES = 8
-
-
-def _needs_bilingual_fallback(chunks: list[dict[str, Any]]) -> bool:
-    """Retry in the other language only when the first retrieval is weak."""
-
-    if len(chunks) < MIN_BILINGUAL_FALLBACK_CHUNKS:
-        return True
-
-    best_score = max(
-        (float(chunk.get("reranker_score") or 0.0) for chunk in chunks),
-        default=0.0,
-    )
-    return best_score < MIN_BILINGUAL_FALLBACK_SCORE
 
 
 def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
@@ -152,18 +123,6 @@ def _assistant_http_error(exc: LocalLLMError) -> HTTPException:
     return HTTPException(status_code=status_code, detail=detail)
 
 
-def _general_knowledge_disclaimer(question: str) -> str:
-    if CYRILLIC_RE.search(question):
-        return (
-            "В текущих материалах я не нашёл информации для ответа на этот вопрос. "
-            "Ниже — ответ из общих знаний, а не из загруженных публикаций."
-        )
-    return (
-        "I could not find information answering this question in the current materials. "
-        "The following answer is based on general knowledge, not on the uploaded publications."
-    )
-
-
 def _reranker_http_error(exc: RerankerError) -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -191,10 +150,6 @@ def _insufficient_information_answer(question: str) -> str:
     )
 
 
-def _source_id(chunk_id: int) -> str:
-    return f"chunk-{int(chunk_id)}"
-
-
 async def _translate_search_query(
     question: str,
     *,
@@ -204,190 +159,6 @@ async def _translate_search_query(
         question,
         source_language=source_language,
     )
-
-
-def _unique_ranked_chunks(chunks: list[dict]) -> list[dict]:
-    best_by_chunk_id: dict[int, dict] = {}
-
-    for chunk in chunks:
-        chunk_id = int(chunk["chunk_id"])
-        current = best_by_chunk_id.get(chunk_id)
-        chunk_rank = (
-            float(chunk.get("reranker_score") or 0.0),
-            float(chunk["similarity"]),
-        )
-        current_rank = (
-            (
-                float(current.get("reranker_score") or 0.0),
-                float(current["similarity"]),
-            )
-            if current is not None
-            else None
-        )
-        if current_rank is None or chunk_rank > current_rank:
-            best_by_chunk_id[chunk_id] = chunk
-
-    return sorted(
-        best_by_chunk_id.values(),
-        key=lambda chunk: (
-            -float(chunk.get("reranker_score") or 0.0),
-            -float(chunk["similarity"]),
-            int(chunk["publication_id"]),
-            int(chunk["chunk_id"]),
-        ),
-    )
-
-
-def _build_answer_sources(chunks: list[dict]) -> list[dict[str, Any]]:
-    return [
-        {
-            "source_id": _source_id(chunk["chunk_id"]),
-            "publication_id": chunk["publication_id"],
-            "publication_title": chunk["publication_title"],
-            "chunk_id": chunk["chunk_id"],
-            "chunk_index": chunk["chunk_index"],
-            "similarity": float(chunk["similarity"]),
-        }
-        for chunk in _unique_ranked_chunks(chunks)
-    ]
-
-
-def _legacy_answer_origin(message: ChatMessage) -> str | None:
-    if message.answer_origin:
-        return message.answer_origin
-    if message.response_kind == "general_knowledge":
-        return "external"
-    if message.response_kind == "database":
-        return "catalog" if message.catalog else "internal"
-    if message.response_kind == "rag" or message.sources:
-        return "internal"
-    return None
-
-
-def _build_conversation(messages: list[ChatMessage], *, limit: int = 8) -> str:
-    recent_messages = messages[-limit:]
-    labels = {"user": "Пользователь", "assistant": "Ассистент"}
-    return "\n".join(
-        f"{labels.get(message.role, message.role)}: {message.content}"
-        for message in recent_messages
-    )
-
-
-def _message_read(message: ChatMessage) -> ChatMessageRead:
-    sources = [
-        {
-            **source,
-            "source_id": source.get("source_id", _source_id(source["chunk_id"])),
-        }
-        for source in (message.sources or [])
-    ]
-    answer_blocks = message.answer_blocks or []
-    if message.role == "assistant" and not answer_blocks:
-        answer_blocks = single_answer_block(message.content)
-
-    return ChatMessageRead(
-        id=message.id,
-        chat_id=message.chat_id,
-        role=message.role,
-        content=message.content,
-        sources=sources,
-        answer_blocks=answer_blocks,
-        answer_origin=_legacy_answer_origin(message),
-        catalog=message.catalog,
-        created_at=message.created_at,
-    )
-
-
-def _chat_read(chat: Chat) -> ChatRead:
-    return ChatRead(
-        id=chat.id,
-        title=chat.title,
-        created_at=chat.created_at,
-        updated_at=chat.updated_at,
-    )
-
-
-def _chat_detail(chat: Chat) -> ChatDetail:
-    return ChatDetail(
-        **_chat_read(chat).model_dump(),
-        messages=[_message_read(message) for message in chat.messages],
-    )
-
-
-def _format_author_name(full_name: str) -> str:
-    return re.sub(r"(?<=\.)\s+(?=[А-ЯЁA-Z]\.)", "", full_name.strip())
-
-
-async def _answer_database_question(
-    *,
-    question: str,
-    db: AsyncSession,
-    conversation: str | None,
-) -> dict[str, Any] | None:
-    with_descriptions = is_publication_catalog_with_descriptions_question(
-        question,
-        conversation,
-    )
-    if with_descriptions or is_publication_catalog_question(question):
-        total, publications = await get_publication_catalog(db)
-        descriptions = (
-            await get_representative_descriptions(
-                db,
-                [publication.id for publication in publications],
-            )
-            if with_descriptions
-            else {}
-        )
-        answer = (
-            build_described_publication_catalog_answer(total, len(publications))
-            if with_descriptions
-            else build_publication_catalog_answer(total, len(publications))
-        )
-        catalog = {
-            "total": total,
-            "returned_count": len(publications),
-            "truncated": len(publications) < total,
-            "items": [
-                {
-                    "publication_id": publication.id,
-                    "title": publication.title,
-                    "year": publication.year,
-                    "authors": [
-                        _format_author_name(author.full_name)
-                        for author in publication.authors
-                    ],
-                    "publication_type": publication.publication_type,
-                    "publication_url": f"/publications/{publication.id}",
-                    "description": (
-                        descriptions.get(publication.id, DESCRIPTION_UNAVAILABLE)
-                        if with_descriptions
-                        else None
-                    ),
-                }
-                for publication in publications
-            ],
-        }
-        return {
-            "question": question,
-            "answer": answer,
-            "sources": [],
-            "answer_blocks": single_answer_block(answer),
-            "answer_origin": "catalog",
-            "catalog": catalog,
-        }
-
-    if is_publication_count_question(question):
-        answer = build_publication_count_answer(await count_publications(db))
-        return {
-            "question": question,
-            "answer": answer,
-            "sources": [],
-            "answer_blocks": single_answer_block(answer),
-            "answer_origin": "internal",
-            "catalog": None,
-        }
-
-    return None
 
 
 async def _get_chat(
@@ -427,99 +198,18 @@ async def _answer_question(
         embedding_service = get_embedding_service()
 
     expected_language = detect_question_language(question)
-    allow_bibliography = question_requests_bibliography(question)
-    query_embedding = await asyncio.to_thread(
-        embedding_service.embed_query,
-        question,
+    retrieval_service = AssistantRetrievalService(
+        repository=SemanticSearchRepository(db),
+        embedding_service=embedding_service,
+        reranker_factory=get_reranker_service,
+        query_translator=_translate_search_query,
+        reranker_service=reranker_service,
     )
-
-    repository = SemanticSearchRepository(db)
-    candidate_chunks = await repository.search_chunks(
-        query_embedding=query_embedding,
-        embedding_model=embedding_service.model_name,
-        query_text=question,
-        limit=HYBRID_TOP_K,
+    chunks = await retrieval_service.retrieve(
+        question=question,
+        source_language=expected_language,
+        limit=limit,
         min_similarity=min_similarity,
-    )
-
-    async def retrieve_verified_chunks(
-        search_question: str,
-        candidates: list[dict] | None = None,
-        *,
-        allow_semantic_fallback: bool = False,
-    ) -> list[dict]:
-        nonlocal reranker_service
-
-        if candidates is None:
-            search_embedding = await asyncio.to_thread(
-                embedding_service.embed_query,
-                search_question,
-            )
-            candidates = await repository.search_chunks(
-                query_embedding=search_embedding,
-                embedding_model=embedding_service.model_name,
-                query_text=search_question,
-                limit=HYBRID_TOP_K,
-                min_similarity=min_similarity,
-            )
-
-        relevant = filter_relevant_sources(
-            question=search_question,
-            chunks=candidates,
-            limit=len(candidates),
-        )
-        if allow_semantic_fallback:
-            semantic_candidates = [
-                chunk
-                for chunk in candidates
-                if float(chunk.get("similarity") or 0.0)
-                >= MIN_TRANSLATED_SEMANTIC_SIMILARITY
-            ][:MAX_TRANSLATED_SEMANTIC_CANDIDATES]
-            relevant = _unique_ranked_chunks(
-                [*relevant, *semantic_candidates]
-            )[:MAX_TRANSLATED_SEMANTIC_CANDIDATES]
-        if not relevant:
-            return []
-
-        if reranker_service is None:
-            reranker_service = await asyncio.to_thread(get_reranker_service)
-
-        reranked = await asyncio.to_thread(
-            reranker_service.rerank,
-            search_question,
-            relevant,
-            limit=limit,
-        )
-        return diversify_chunks_by_publication(reranked, limit)
-
-    chunks = await retrieve_verified_chunks(question, candidate_chunks)
-    translated_chunks: list[dict] = []
-    if _needs_bilingual_fallback(chunks):
-        try:
-            translated_query = await _translate_search_query(
-                question,
-                source_language=expected_language,
-            )
-        except LocalLLMError as exc:
-            logger.warning("Bilingual search query translation failed: %s", exc)
-        else:
-            if (
-                translated_query.strip()
-                and translated_query.casefold() != question.casefold()
-            ):
-                logger.info("Running retrieval with automatically translated query")
-                translated_chunks = await retrieve_verified_chunks(
-                    translated_query,
-                    allow_semantic_fallback=True,
-                )
-    else:
-        logger.info(
-            "Skipping bilingual retrieval fallback: initial retrieval is strong"
-        )
-
-    chunks = diversify_chunks_by_publication(
-        _unique_ranked_chunks([*chunks, *translated_chunks]),
-        limit,
     )
 
     logger.info(
@@ -544,99 +234,13 @@ async def _answer_question(
             "catalog": None,
         }
 
-    ranked_chunks = _unique_ranked_chunks(chunks)
-    chunks_with_source_ids = [
-        {**chunk, "source_id": _source_id(chunk["chunk_id"])}
-        for chunk in ranked_chunks
-    ]
-    context = build_rag_context(
-        chunks_with_source_ids,
-        preserve_bibliography=allow_bibliography,
-    )
-    logger.info(
-        "final_selected_chunks=%s",
-        [chunk.get("chunk_id") for chunk in chunks],
-    )
-    prompt = build_rag_prompt(
-        question,
-        context,
-        conversation,
+    return await AssistantGenerationService(LocalLLMService()).generate(
+        question=question,
+        expected_language=expected_language,
+        chunks=chunks,
+        conversation=conversation,
         detail_percent=detail_percent,
     )
-    llm_service = LocalLLMService()
-    available_sources = _build_answer_sources(ranked_chunks)
-    allowed_source_ids = {
-        source["source_id"]
-        for source in available_sources
-    }
-
-    async def generate_and_validate(generation_prompt: str) -> list[dict[str, Any]]:
-        raw_answer = await llm_service.generate_answer(
-            generation_prompt,
-            expected_language=expected_language,
-            structured_output=True,
-        )
-        blocks = parse_structured_rag_answer(
-            raw_answer,
-            allowed_source_ids=allowed_source_ids,
-        )
-        validate_human_answer(
-            blocks,
-            expected_language=expected_language,
-            allow_bibliography=allow_bibliography,
-        )
-        return blocks
-
-    try:
-        answer_blocks = await generate_and_validate(prompt)
-    except LLMGenerationError as first_exc:
-        logger.warning(
-            "Structured assistant answer rejected on first attempt: %s",
-            first_exc,
-        )
-        retry_prompt = (
-            f"{prompt}\n\n"
-            "Предыдущий ответ не прошёл проверку качества: "
-            f"{first_exc}. Сформируй ответ заново: "
-            "строго на языке вопроса, естественным и содержательным текстом, без служебных "
-            "ID, JSON в поле text, метаданных поиска и случайных символов. Соблюдай "
-            "заданный JSON-формат всего ответа. Не копируй OCR-слова со смешением "
-            "кириллицы и латиницы и не перечисляй авторов или литературу, если вопрос "
-            "не просит об этом. Делай короткие смысловые блоки и ставь после каждого "
-            "только 1–3 source_id, непосредственно подтверждающих его факты. Не нужно "
-            "использовать все источники из контекста."
-        )
-        try:
-            answer_blocks = await generate_and_validate(retry_prompt)
-        except LLMGenerationError as second_exc:
-            logger.error(
-                "Structured assistant answer rejected on second attempt: %s; "
-                "refusing to return an answer without precise inline citations",
-                second_exc,
-            )
-            raise second_exc from first_exc
-
-    source_by_id = {
-        source["source_id"]: source
-        for source in available_sources
-    }
-    used_source_ids = list(
-        dict.fromkeys(
-            source_id
-            for block in answer_blocks
-            for source_id in block["source_ids"]
-        )
-    )
-    sources = [source_by_id[source_id] for source_id in used_source_ids]
-    answer = answer_text_from_blocks(answer_blocks)
-    return {
-        "question": question,
-        "answer": answer,
-        "sources": sources,
-        "answer_blocks": answer_blocks,
-        "answer_origin": "internal",
-        "catalog": None,
-    }
 
 
 @router.post("/ask", response_model=AssistantAskResponse)

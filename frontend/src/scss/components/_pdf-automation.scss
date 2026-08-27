@@ -1,0 +1,139 @@
+@use "../abstracts/variables" as *;
+@use "../abstracts/mixins" as *;
+
+.pdf-automation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid #d7e1ee;
+  border-radius: 14px;
+  background: #f9fbff;
+
+  &__content {
+    min-width: 0;
+  }
+
+  &__title {
+    margin: 0;
+    font-weight: 800;
+    color: $text;
+  }
+
+  &__toggle {
+    width: fit-content;
+    margin-top: 8px;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px !important;
+    color: $muted !important;
+    font-weight: 700 !important;
+
+    input {
+      width: 16px;
+      height: 16px;
+      padding: 0;
+      flex-shrink: 0;
+    }
+  }
+
+  &__actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  &__message,
+  &__preview p,
+  &__warning {
+    margin: 6px 0 0;
+    color: $muted;
+    line-height: 1.4;
+  }
+
+  &__preview {
+    padding: 12px 14px;
+    border: 1px solid #d7e1ee;
+    border-radius: 14px;
+    background: white;
+  }
+
+  &__summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+
+    span {
+      min-width: 0;
+      padding: 9px 10px;
+      border-radius: 10px;
+      background: #f9fbff;
+      color: $text-soft;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+    }
+  }
+
+  &__result-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    & + & {
+      margin-top: 12px;
+    }
+  }
+
+  &__result-title {
+    margin: 0 !important;
+    color: $text-soft !important;
+    font-weight: 800;
+  }
+
+  &__chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  &__chip {
+    max-width: 100%;
+    padding: 7px 9px;
+    border-radius: 10px;
+    background: $primary-soft;
+    color: $text;
+    font-weight: 700;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  &__warning {
+    color: $error;
+  }
+
+  @include respond-tablet {
+    align-items: flex-start;
+    flex-direction: column;
+
+    &__actions {
+      justify-content: flex-start;
+    }
+
+    &__summary {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @include respond-mobile {
+    align-items: stretch;
+
+    &__actions,
+    &__actions .button {
+      width: 100%;
+    }
+  }
+}

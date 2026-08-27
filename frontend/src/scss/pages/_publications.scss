@@ -24,16 +24,6 @@
   }
 }
 
-.publication-create-page .auto-filled-field {
-  border-color: rgba(183, 121, 31, 0.55);
-  background: rgba(183, 121, 31, 0.06);
-}
-
-.publication-create-page .auto-filled-field:focus {
-  border-color: rgba(183, 121, 31, 0.85);
-  box-shadow: 0 0 0 3px rgba(183, 121, 31, 0.12);
-}
-
 .publication-import-page__upload {
   display: grid;
   gap: 16px;

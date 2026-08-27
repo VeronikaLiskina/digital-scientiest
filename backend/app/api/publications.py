@@ -13,7 +13,7 @@ from app.models.publication_import import ImportBatch, ImportItem
 from app.models.source_file import SourceFile
 from app.models.topic import Topic
 from app.schemas.publication import PublicationCreate, PublicationRead, PublicationUpdate
-from app.services.pdf_import import save_uploaded_pdf_as_source_file
+from app.services.pdf_storage_service import save_uploaded_pdf_as_source_file
 from app.services.pdf_processing_queue import enqueue_pdf_processing
 from app.services.publication_cleanup_service import (
     delete_managed_upload_file,

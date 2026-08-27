@@ -116,10 +116,6 @@ def _is_cyrillic(value: str) -> bool:
     return bool(re.search(r"[А-Яа-яЁё]", value))
 
 
-def _is_latin(value: str) -> bool:
-    return bool(re.search(r"[A-Za-z]", value))
-
-
 def _format_word(value: str) -> str:
     value = value.strip(" .")
 
