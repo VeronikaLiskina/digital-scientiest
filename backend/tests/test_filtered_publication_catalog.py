@@ -130,3 +130,60 @@ async def test_multiple_filter_followups_and_count_use_same_selection(client):
     assert "найдено публикаций: 1" in message["content"]
     assert "магнитизму" in message["content"]
     assert message["sources"] == []
+
+
+async def test_coauthors_require_every_named_person_and_respect_initials(client):
+    demonterova = (await client.post("/api/authors", json={"full_name": "Демонтерова Е.И."})).json()["id"]
+    sidorov = (await client.post("/api/authors", json={"full_name": "Сидоров С.С."})).json()["id"]
+    joint = (await client.post("/api/publications", json={"title": "Joint study", "author_ids": [demonterova, sidorov]})).json()["id"]
+    only_demonterova = (await client.post("/api/publications", json={"title": "Another study", "author_ids": [demonterova]})).json()["id"]
+    await client.post("/api/publications", json={"title": "Other author", "author_ids": [sidorov]})
+    data = await ask(client, "Какие публикации написаны совместно Сидоровым С.С. и Демонтеровой Е.И.?")
+    assert {p["publication_id"] for p in data["catalog"]["items"]} == {joint}
+    data = await ask(client, "Какие публикации написаны совместно Ивановым А.В. и Демонтеровой Е.И.?")
+    assert {p["publication_id"] for p in data["catalog"]["items"]} == {joint, only_demonterova}
+    data = await ask(client, "Покажи публикации автора Иванова А.Б.")
+    assert data["catalog"]["total"] == 0
+
+
+async def test_foreign_author_participation_uses_catalogue_identity(client):
+    he = (await client.post("/api/authors", json={"full_name": "Huaiyu He"})).json()["id"]
+    wanted = (await client.post("/api/publications", json={"title": "Dating study", "author_ids": [he]})).json()["id"]
+    await client.post("/api/publications", json={"title": "Huaiyu He is mentioned in this title"})
+    data = await ask(client, "Найди работы с участием Huaiyu He.")
+    assert data["answer_origin"] == "catalog"
+    assert [p["publication_id"] for p in data["catalog"]["items"]] == [wanted]
+
+
+async def test_existence_query_applies_year_instead_of_retrieval(client):
+    wanted = (await client.post("/api/publications", json={"title": "Tomtor geochronology", "year": 2026})).json()["id"]
+    await client.post("/api/publications", json={"title": "Earlier paper", "year": 2025})
+    data = await ask(client, "Есть ли в базе публикации за 2026 год?")
+    assert [p["publication_id"] for p in data["catalog"]["items"]] == [wanted]
+    data = await ask(client, "Есть ли в базе публикации за 2035 год?")
+    assert data["catalog"]["total"] == 0
+
+
+@pytest.mark.parametrize(("question", "titles", "wanted"), [
+    ("Найди статью о геохимии апатитов Слюдянского месторождения.", [
+        "Apatite Geochemistry of the Slyudyanka Deposit, Siberia", "Apatite Geochemistry of another deposit", "Slyudyanka Deposit: structural study"], [0]),
+    ("Найди публикации по Сибирским траппам.", [
+        "Siberian Traps large igneous province", "Сибирские траппы", "Basaltic magmatism in Africa"], [0, 1]),
+    ("Какие исследования посвящены Восточно-Африканскому рифту?", [
+        "Magma mixing in the East-African Rift", "East African rift system", "Western Siberian rift systems"], [0, 1]),
+])
+async def test_cross_language_catalogue_search_keeps_all_requested_concepts(client, question, titles, wanted):
+    ids = [(await client.post("/api/publications", json={"title": title})).json()["id"] for title in titles]
+    data = await ask(client, question)
+    assert data["answer_origin"] == "catalog"
+    assert {p["publication_id"] for p in data["catalog"]["items"]} == {ids[i] for i in wanted}
+
+
+async def test_two_coauthors_cannot_be_satisfied_by_one_abbreviated_name(client):
+    john = (await client.post("/api/authors", json={"full_name": "John Smith"})).json()["id"]
+    james = (await client.post("/api/authors", json={"full_name": "James Smith"})).json()["id"]
+    abbreviated = (await client.post("/api/authors", json={"full_name": "J. Smith"})).json()["id"]
+    await client.post("/api/publications", json={"title": "Only one Smith", "author_ids": [abbreviated]})
+    joint = (await client.post("/api/publications", json={"title": "Both Smiths", "author_ids": [john, james]})).json()["id"]
+    data = await ask(client, "Find papers by John Smith and James Smith")
+    assert [p["publication_id"] for p in data["catalog"]["items"]] == [joint]

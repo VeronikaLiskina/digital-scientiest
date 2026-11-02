@@ -74,3 +74,36 @@ def test_multiple_followups_preserve_accumulated_filters():
 
 def test_filter_followup_does_not_reuse_unrelated_scientific_question():
     assert parse_publication_search("А только до 2010 года?", "Пользователь: Что такое магнитизм?") is None
+
+
+@pytest.mark.parametrize(("question", "expected"), [
+    ("Найди работы с участием Huaiyu He.", PublicationSearch(author="huaiyu he")),
+    ("Есть ли в базе публикации за 2026 год?", PublicationSearch(year_from=2026, year_to=2026)),
+    ("Есть ли в базе данных публикации за 2035 год?", PublicationSearch(year_from=2035, year_to=2035)),
+])
+def test_participation_and_database_existence_requests(question, expected):
+    assert parse_publication_search(question) == expected
+
+
+def test_joint_authors_are_separate_required_conditions():
+    filters = parse_publication_search("Какие публикации написаны совместно Ивановым А.В. и Демонтеровой Е.И.?")
+    assert filters is not None
+    assert filters.author == ""
+    assert filters.authors == ("ивановым а.в.", "демонтеровой е.и.")
+
+
+def test_language_adjective_before_document_noun():
+    assert parse_publication_search("Покажи англоязычные статьи о Сибирских траппах за 2005–2015 годы.") == PublicationSearch(
+        topic="сибирских траппах", language="en", year_from=2005, year_to=2015)
+
+
+def test_followup_refines_previous_selection_with_language_and_years():
+    assert parse_publication_search("Оставь из них только англоязычные работы за 2009–2015 годы.",
+        "Пользователь: Найди публикации по Сибирским траппам.") == PublicationSearch(
+            topic="сибирским траппам", language="en", year_from=2009, year_to=2015)
+
+
+def test_language_followup_preserves_requested_document_type():
+    assert parse_publication_search("А только англоязычные обзоры?",
+        "Пользователь: Покажи публикации по ботанике") == PublicationSearch(
+            topic="ботанике", language="en", publication_type="review")

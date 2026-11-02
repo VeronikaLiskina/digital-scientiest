@@ -9,11 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.author import Author
+from app.models.associations import publication_authors
 from app.models.document_chunk import DocumentChunk
 from app.models.keyword import Keyword
 from app.models.publication import Publication
 from app.models.topic import Topic
 from app.services.publication_query_service import CATALOG_MAX_ITEMS, _normalize_question
+from app.services.scientific_query_expansion import _get_morphology, expand_scientific_query_terms
+from app.utils.normalization import author_identity_signature, author_names_match
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,7 @@ class PublicationSearch:
     with_descriptions: bool = False
     title: str = ""
     publication_ids: tuple[int, ...] | None = None
+    authors: tuple[str, ...] = ()
 
 
 # One vocabulary for document references. A title lookup must not depend on
@@ -99,7 +103,7 @@ TYPE_LABELS = {
 NOUN = rf"(?:материалы\s+конференци\w*|статьям|{DOCUMENT_NOUN})"
 LOOKUP = re.compile(
     rf"^(?:(?:покажи(?:те)?|найди(?:те)?|подбери(?:те)?|перечисли(?:те)?|список|каталог|какие|сколько|есть\s+ли)\s+"
-    rf"(?:(?:мне|все|научные|загруженные)\s+)*|в\s+каких\s+|"
+    rf"(?:(?:мне|все|научные|загруженные|в\s+(?:базе(?:\s+данных)?|каталоге|системе))\s+)*|в\s+каких\s+|"
     rf"(?:find|show|list|select|how\s+many|which|what)\s+(?:(?:me|all|scientific)\s+)*)?(?P<noun>{NOUN})\b"
 )
 TOKEN = re.compile(r"[a-zа-я0-9]+", re.I)
@@ -130,7 +134,7 @@ def parse_publication_search(question: str, conversation: str | None = None) -> 
         return replace(inherited, count_only=True, with_descriptions=False) if inherited else None
     # Elliptical follow-ups may refine an existing catalog selection. Never use
     # a previous scientific answer as an implicit catalog filter.
-    followup = re.match(r"^(?:а\s+(?:только\s+)?|оставь\s+(?:только\s+)?|покажи\s+только\s+|only\s+)(.+)$", text)
+    followup = re.match(r"^(?:а\s+(?:только\s+)?|оставь\s+(?:из\s+них\s+)?(?:только\s+)?|покажи\s+только\s+|only\s+)(.+)$", text)
     if followup and inherited:
         refined = _parse_search("публикации " + followup[1], question,
                                 initial=replace(inherited, count_only=False, with_descriptions=False))
@@ -142,12 +146,22 @@ def _parse_search(text: str, original: str, *, initial: PublicationSearch | None
     reference = extract_document_reference(original)
     if reference is not None:
         return PublicationSearch(title=reference.title, with_descriptions=True) if reference.catalog_request else None
+    language_adjective = re.search(r"\b(англоязычн\w*|русскоязычн\w*)\b", text)
+    if language_adjective:
+        text = " ".join((text[:language_adjective.start()] + " " + text[language_adjective.end():]).split())
     match = LOOKUP.match(text)
     if match is None:
         return None
     noun = match["noun"]
     rest = text[match.end():].strip()
     filters = initial or PublicationSearch(count_only=text.startswith(("сколько ", "how many ")))
+    if language_adjective:
+        filters = replace(filters, language="en" if language_adjective[1].startswith("англ") else "ru")
+    if initial is not None:
+        followup_noun = re.match(rf"^({NOUN})\b\s*", rest)
+        if followup_noun:
+            noun = followup_noun[1]
+            rest = rest[followup_noun.end():]
     for prefix, value in TYPE_PREFIXES:
         if value != "article" and noun.startswith(prefix):
             filters = replace(filters, publication_type=value)
@@ -180,9 +194,11 @@ def _parse_search(text: str, original: str, *, initial: PublicationSearch | None
     if description:
         filters = replace(filters, with_descriptions=True)
         rest = rest[:description.start()] + " " + rest[description.end():]
-    author = re.search(r"\b(?:(?:по\s+)?автор(?:а|ов|у)?|написанные|написаны|by)\s+(.+?)(?=\s+(?:по|про|о|об|на тему|с описанием|about|on)\s+|$)", rest)
+    author = re.search(r"\b(?:(?:по\s+)?автор(?:а|ов|у)?|написанные|написаны|с\s+участием|в\s+соавторстве\s+с|by)\s+(?:совместно\s+)?(.+?)(?=\s+(?:по|про|о|об|на тему|с описанием|about|on)\s+|$)", rest)
     if author:
-        filters = replace(filters, author=author[1].strip(" ,;"))
+        names = tuple(name.strip(" ,;") for name in re.split(r"\s+(?:и|and)\s+|;", author[1]) if name.strip(" ,;"))
+        names = tuple(name + "." if re.search(r"\b[а-яa-z]\.[а-яa-z]$", name) else name for name in names)
+        filters = replace(filters, author=names[0] if len(names) == 1 else "", authors=names if len(names) > 1 else ())
         rest = rest[:author.start()] + " " + rest[author.end():]
     rest = re.sub(r"\b(?:в\s+(?:системе|базе(?:\s+данных)?|каталоге)|есть|имеются|находятся|загружены)\b", " ", rest)
     rest = " ".join(rest.split()).strip(" ,;")
@@ -194,10 +210,55 @@ def _parse_search(text: str, original: str, *, initial: PublicationSearch | None
     elif rest:
         # Do not silently discard conditions we did not understand.
         return None
-    if not any((filters.topic, filters.author, filters.year_from is not None,
+    if not any((filters.topic, filters.author, filters.authors, filters.year_from is not None,
                 filters.year_to is not None, filters.language, filters.publication_type)):
         return None
     return filters
+
+
+# Equivalent roots are alternatives within one concept, not extra conditions.
+# Other words (including place names) keep their own mandatory concept group.
+TOPIC_EQUIVALENTS = (
+    ("геохим", "geochem"), ("геохронолог", "geochronolog"),
+    ("геолог", "geolog"), ("ботан", "botan"),
+    ("магмат", "magmati"), ("вулкан", "volcan"),
+    ("базальт", "basalt"), ("базанит", "basanit"),
+    ("долерит", "dolerit"), ("кимберлит", "kimberlit"),
+    ("апатит", "apatit"), ("циркон", "zircon"),
+    ("карбонатит", "carbonatit"), ("чароит", "charoit"),
+    ("гранит", "granit"), ("перидотит", "peridotit"),
+    ("месторожд", "deposit"), ("рудообразован", "mineralisation", "mineralization"),
+    ("золот", "gold", "aurifer"), ("изотоп", "isotop"),
+    ("тектоник", "tectonic"), ("рифт", "rift"),
+    ("сибир", "siberi"), ("трапп", "traps"),
+    ("байкал", "baikal"), ("камчат", "kamchat"),
+    ("монгол", "mongol"), ("африк", "afric"),
+    ("восточ", "east"), ("запад", "west"),
+    ("север", "north"), ("южн", "south"),
+)
+
+
+def _author_search_variants(name: str) -> set[str]:
+    name = name.title()
+    variants = {name}
+    # Only surname parses are used: initials are never stemmed or discarded.
+    for token in re.findall(r"[А-ЯЁ][а-яё-]+", name):
+        for parsed in _get_morphology().parse(token):
+            if "Surn" in parsed.tag:
+                nominative = parsed.inflect({"nomn"})
+                surname = nominative.word if nominative else parsed.normal_form
+                variants.add(name.replace(token, surname.title(), 1))
+    return variants
+
+
+def _author_matches(requested: str, stored: str) -> bool:
+    if author_names_match(requested, stored):
+        return True
+    if re.fullmatch(r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+", requested):
+        surname = author_identity_signature(requested + " A.")
+        identity = author_identity_signature(stored)
+        return bool(surname and identity and surname[0] == identity[0])
+    return False
 
 
 def _topic_query(topic: str):
@@ -223,6 +284,13 @@ def _topic_query(topic: str):
             aliases = ("палеомагнит", "палеомагнетизм", "paleomagnet", "palaeomagnet")
         elif re.match(r"^(?:магмат|magmati)", token):
             aliases = ("магмат", "magmati")
+        for equivalent in TOPIC_EQUIVALENTS:
+            if any(token.startswith(root) for root in equivalent):
+                aliases = (*aliases, *equivalent)
+        variants = expand_scientific_query_terms(token, original_terms=[], stopwords=STOPWORDS)
+        # Transliteration lets unknown place names work without a name-specific
+        # dictionary; short fragments must not become broad prefix matches.
+        aliases = tuple(dict.fromkeys((*aliases, *(term for term in variants if len(term) >= 5))))
         if aliases:
             query = query.op("||")(func.to_tsquery("simple", " | ".join(f"{term}:*" for term in aliases)))
         groups.append(query)
@@ -296,9 +364,28 @@ async def search_publications(db: AsyncSession, filters: PublicationSearch, *, m
     if filters.publication_type:
         aliases = {kind: (kind, label) for kind, label in TYPE_LABELS.items()}
         conditions.append(func.lower(Publication.publication_type).in_(aliases.get(filters.publication_type, (filters.publication_type,))))
-    if filters.author:
-        query = func.plainto_tsquery("russian", filters.author)
-        conditions.append(Publication.authors.any(_matches_text(Author.full_name, query)))
+    requested_authors = (*filters.authors, *((filters.author,) if filters.author else ()))
+    if requested_authors:
+        authors = (await db.scalars(select(Author))).all()
+        matches = []
+        for requested in requested_authors:
+            variants = _author_search_variants(requested)
+            ids = [author.id for author in authors if any(_author_matches(variant, author.full_name) for variant in variants)]
+            matches.append(ids)
+        if len(matches) == 1:
+            conditions.append(Publication.authors.any(Author.id.in_(matches[0])))
+        else:
+            # Different requested coauthors need different association rows;
+            # one abbreviated name must not stand for two distinct people.
+            links = [publication_authors.alias(f"coauthor_{i}") for i in range(len(matches))]
+            joined = links[0]
+            for link in links[1:]:
+                joined = joined.join(link, link.c.publication_id == links[0].c.publication_id)
+            author_conditions = [links[0].c.publication_id == Publication.id]
+            author_conditions.extend(link.c.author_id.in_(ids) for link, ids in zip(links, matches))
+            author_conditions.extend(left.c.author_id != right.c.author_id
+                                     for i, left in enumerate(links) for right in links[i + 1:])
+            conditions.append(select(literal(1)).select_from(joined).where(*author_conditions).correlate(Publication).exists())
     if filters.topic:
         query = _topic_query(filters.topic)
         if query is None:
@@ -332,6 +419,8 @@ def search_summary(filters: PublicationSearch, total: int, returned: int) -> str
         criteria.append(f"тема «{filters.topic}»")
     if filters.author:
         criteria.append(f"автор «{filters.author}»")
+    if filters.authors:
+        criteria.append("соавторы: " + ", ".join(f"«{name}»" for name in filters.authors))
     if filters.year_from is not None or filters.year_to is not None:
         criteria.append(f"год: {filters.year_from or '…'}–{filters.year_to or '…'}")
     if filters.language:
