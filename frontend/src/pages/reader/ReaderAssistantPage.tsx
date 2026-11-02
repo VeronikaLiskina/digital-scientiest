@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import {
   assistantApi,
   type AssistantAnswerBlock,
+  type AssistantMode,
   type ChatDetail,
   type ChatMessage,
   type ChatSummary,
@@ -91,6 +92,7 @@ export function ReaderAssistantPage() {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [activeChat, setActiveChat] = useState<ChatDetail | null>(null);
   const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<AssistantMode>("auto");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<ChatError | null>(null);
   const [failedQuery, setFailedQuery] = useState<string | null>(null);
@@ -195,7 +197,7 @@ export function ReaderAssistantPage() {
       };
       setActiveChat({ ...chat, messages: [...chat.messages, temporaryMessage] });
 
-      const reply = await assistantApi.sendMessage(chat.id, content);
+      const reply = await assistantApi.sendMessage(chat.id, content, mode);
       const updated: ChatDetail = {
         ...reply.chat,
         messages: [
@@ -243,13 +245,13 @@ export function ReaderAssistantPage() {
       <div className="page-header">
         <div>
           <h1>ИИ-ассистент</h1>
-          <p>Задавайте уточняющие вопросы и возвращайтесь к прошлым диалогам.</p>
+          <p>Спрашивайте о публикациях, обсуждайте идеи и общайтесь на разные темы.</p>
         </div>
       </div>
 
       <div className="chat-layout">
         <aside className="card chat-sidebar">
-          <button className="button chat-sidebar__new" type="button" onClick={createChat}>
+          <button className="button chat-sidebar__new" type="button" onClick={createChat} disabled={isLoading}>
             + Новый чат
           </button>
           <div className="chat-sidebar__list">
@@ -258,7 +260,7 @@ export function ReaderAssistantPage() {
                 className={`chat-sidebar__item${activeChat?.id === chat.id ? " chat-sidebar__item_active" : ""}`}
                 key={chat.id}
               >
-                <button type="button" onClick={() => openChat(chat.id)}>
+                <button type="button" onClick={() => openChat(chat.id)} disabled={isLoading}>
                   <strong>{chat.title}</strong>
                   <span>{new Date(chat.updated_at).toLocaleDateString("ru-RU")}</span>
                 </button>
@@ -267,6 +269,7 @@ export function ReaderAssistantPage() {
                   type="button"
                   aria-label="Удалить чат"
                   onClick={() => removeChat(chat.id)}
+                  disabled={isLoading}
                 >
                   ×
                 </button>
@@ -281,7 +284,7 @@ export function ReaderAssistantPage() {
             {!activeChat || activeChat.messages.length === 0 ? (
               <div className="chat-welcome">
                 <strong>Начните новый диалог</strong>
-                <p>Например: «Какие публикации есть по магматизму?»</p>
+                <p>Например: «Какие публикации есть по магматизму?» или «Привет, давай поговорим».</p>
               </div>
             ) : (
               activeChat.messages.map((message) => (
@@ -313,13 +316,7 @@ export function ReaderAssistantPage() {
                     </div>
                   )}
                   {message.role === "assistant" && message.answer_origin === "external" && (
-                    <div className="chat-message__notice chat-message__notice_external" role="alert">
-                      <span aria-hidden="true">!</span>
-                      <div>
-                        <strong>Информация из внешнего источника</strong>
-                        <p>Ответ основан на общих знаниях, а не на материалах архива.</p>
-                      </div>
-                    </div>
+                    <p className="chat-message__origin">Свободный диалог · Общие знания модели</p>
                   )}
                 </article>
               ))
@@ -362,6 +359,15 @@ export function ReaderAssistantPage() {
           )}
 
           <form className="chat-composer" onSubmit={handleSubmit}>
+            <label className="chat-composer__mode">
+              Режим ответа
+              <select value={mode} onChange={(event) => setMode(event.target.value as AssistantMode)} disabled={isLoading}>
+                <option value="auto">Авто</option>
+                <option value="publications">По публикациям</option>
+                <option value="general">Свободный диалог</option>
+              </select>
+              <span>{mode === "auto" ? "Публикации и общение на разные темы" : mode === "publications" ? "Только загруженные материалы и ссылки на источники" : "Объяснения, идеи и разговор на разные темы"}</span>
+            </label>
             <textarea
               value={query}
               onChange={(event) => setQuery(event.target.value)}

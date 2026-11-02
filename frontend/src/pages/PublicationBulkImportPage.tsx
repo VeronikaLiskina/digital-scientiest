@@ -45,7 +45,7 @@ function validateFiles(files: File[]) {
 }
 
 function itemAuthors(item: PublicationImportItem) {
-  const authors = item.extracted_metadata?.authors ?? [];
+  const authors = item.verified_authors ?? [];
 
   if (!authors.length) {
     return "—";
@@ -221,7 +221,15 @@ export function PublicationBulkImportPage() {
                   <tr className={isPdfProcessing ? "publication-import-page__processing-row" : undefined} key={item.id}>
                     <td>{item.original_file_name}</td>
                     <td>{item.title ?? item.extracted_metadata?.title ?? "—"}</td>
-                    <td>{itemAuthors(item)}</td>
+                    <td>
+                      {itemAuthors(item)}
+                      {Boolean(item.extracted_metadata?.unverified_authors?.length) && item.status === "needs_review" && (
+                        <p className="muted">Не подтверждены: {item.extracted_metadata?.unverified_authors?.join(", ")}</p>
+                      )}
+                      {item.status === "needs_review" && Boolean(item.extracted_metadata?.new_authors?.length) && (
+                        <p className="muted">Новые авторы: требуют проверки</p>
+                      )}
+                    </td>
                     <td>
                       <StatusBadge value={item.status} />
                     </td>

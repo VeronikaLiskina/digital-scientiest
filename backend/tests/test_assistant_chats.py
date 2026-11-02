@@ -3,7 +3,8 @@ import pytest
 from app.api import assistant
 from app.dependencies import get_embedding_service
 from app.main import app
-from app.services.local_llm_service import (
+from app.services.llm.base import (
+    LLMAccessDeniedError,
     LLMConfigurationError,
     LLMGenerationError,
     LLMRateLimitError,
@@ -20,6 +21,39 @@ class FakeEmbeddingService:
 
     def embed_text(self, _text: str) -> list[float]:
         return [0.1] * 768
+
+
+async def test_general_chat_persists_origin_and_continues_without_archive_models(client, monkeypatch):
+    from app.services import assistant_conversation_service
+
+    prompts = []
+
+    class GeneralLLM:
+        async def generate_general_knowledge_answer(self, prompt, **kwargs):
+            prompts.append(prompt)
+            return "Привет! Давай поговорим о музыке."
+
+    def no_search():
+        pytest.fail("Conversation must not load search models")
+
+    monkeypatch.setattr(assistant_conversation_service, "LocalLLMService", GeneralLLM)
+    monkeypatch.setattr(assistant, "get_embedding_service", no_search)
+    chat_id = (await client.post("/assistant/chats", json={})).json()["id"]
+    for content in ["Привет", "А расскажи ещё"]:
+        response = await client.post(f"/assistant/chats/{chat_id}/messages", json={"content": content})
+        assert response.status_code == 200, response.text
+        message = response.json()["assistant_message"]
+        assert message["answer_origin"] == "external"
+        assert message["sources"] == []
+        assert message["catalog"] is None
+    assert "Пользователь: Привет" in prompts[-1]
+    saved = (await client.get(f"/assistant/chats/{chat_id}")).json()["messages"]
+    assert [message["answer_origin"] for message in saved if message["role"] == "assistant"] == ["external", "external"]
+
+
+async def test_unknown_answer_mode_is_rejected(client):
+    response = await client.post("/assistant/ask", json={"question": "Привет", "mode": "unknown"})
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -126,8 +160,15 @@ async def test_chat_history_create_send_reopen_and_delete(client, monkeypatch):
             LLMConfigurationError("missing key"),
             503,
             "llm_configuration_error",
-            "Ассистент не настроен",
+            "Нет доступа к модели",
             False,
+        ),
+        (
+            LLMAccessDeniedError("forbidden"),
+            503,
+            "llm_access_denied",
+            "Сервис модели отклонил запрос",
+            True,
         ),
     ],
 )

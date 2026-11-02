@@ -1,4 +1,5 @@
 import re
+import unicodedata
 
 
 _SPACES_RE = re.compile(r"\s+")
@@ -148,9 +149,7 @@ def _format_last_name(value: str) -> str | None:
     if normalized in LATIN_LAST_NAME_MAP:
         return LATIN_LAST_NAME_MAP[normalized]
 
-    # Неизвестную латинскую фамилию не русифицируем.
-    # Иначе получится опасный микс типа Smith Д.А.
-    return None
+    return _format_word(value) if value.isupper() else value[:1].upper() + value[1:]
 
 
 def _raw_initial(value: str | None) -> str:
@@ -166,6 +165,9 @@ def _raw_initial(value: str | None) -> str:
 
 
 def _format_initial(value: str | None) -> str:
+    digraphs = {"yu": "Ю", "ya": "Я", "yo": "Ё", "zh": "Ж", "kh": "Х", "ch": "Ч", "sh": "Ш"}
+    if value and value.strip(" .").casefold() in digraphs:
+        return digraphs[value.strip(" .").casefold()] + "."
     initial = _raw_initial(value)
 
     if not initial:
@@ -185,6 +187,9 @@ def _compose_author_name(
     formatted_last_name = _format_last_name(last_name)
     first_initial = _format_initial(first_initial_source)
     second_initial = _format_initial(second_initial_source)
+    if formatted_last_name and not _is_cyrillic(formatted_last_name):
+        first_initial = _latin_initial(first_initial_source) + "."
+        second_initial = _latin_initial(second_initial_source) + "."
 
     if not formatted_last_name or not first_initial or not second_initial:
         return None
@@ -206,9 +211,8 @@ def format_author_display_name(value: str) -> str | None:
     - A. V. Ivanov
     - Alexei V. Ivanov
 
-    Не угадывает:
-    - Alexei Ivanov
-    - John Smith
+    Сохраняет английские имена без отчества (Alexei Ivanov, John Smith),
+    не добавляя отсутствующие инициалы.
     """
 
     value = _clean_author_value(value)
@@ -217,35 +221,28 @@ def format_author_display_name(value: str) -> str | None:
         return None
 
     # А. В. Иванов / A. V. Ivanov
-    match = re.fullmatch(
-        r"([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+)",
-        value,
-    )
-
-    if match:
-        first_initial, second_initial, last_name = match.groups()
-
-        return _compose_author_name(
-            last_name=last_name,
-            first_initial_source=first_initial,
-            second_initial_source=second_initial,
-        )
-
-    # Иванов А. В. / Иванов А.В. / Ivanov A. V.
-    match = re.fullmatch(
-        r"([A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+)\s+([A-ZА-ЯЁ])\.\s*([A-ZА-ЯЁ])\.?",
-        value,
-    )
-
-    if match:
-        last_name, first_initial, second_initial = match.groups()
-
-        return _compose_author_name(
-            last_name=last_name,
-            first_initial_source=first_initial,
-            second_initial_source=second_initial,
-        )
-
+    initial_token = r"(?:[A-ZА-ЯЁ]|Yu|Ya|Yo|Zh|Kh|Ch|Sh)"
+    surname_token = r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+"
+    extended = re.fullmatch(rf"({initial_token})\.\s*({initial_token})\.\s*({surname_token})", value)
+    if extended:
+        first, second, last = extended.groups()
+        return _compose_author_name(last, first, second)
+    extended = re.fullmatch(rf"({surname_token})\s+({initial_token})\.\s*({initial_token})\.?", value)
+    if extended:
+        last, first, second = extended.groups()
+        return _compose_author_name(last, first, second)
+    single = re.fullmatch(rf"({initial_token})\.\s*({surname_token})", value)
+    if single:
+        first, last = single.groups()
+        formatted = _format_last_name(last)
+        initial = _format_initial(first) if _is_cyrillic(formatted) else _latin_initial(first) + "."
+        return f"{formatted} {initial}"
+    single = re.fullmatch(rf"({surname_token})\s+({initial_token})\.?", value)
+    if single:
+        last, first = single.groups()
+        formatted = _format_last_name(last)
+        initial = _format_initial(first) if _is_cyrillic(formatted) else _latin_initial(first) + "."
+        return f"{formatted} {initial}"
     # Иванов Алексей Викторович
     match = re.fullmatch(
         r"([А-ЯЁ][а-яё\-]+)\s+([А-ЯЁ][а-яё\-]+)\s+([А-ЯЁ][а-яё\-]+)",
@@ -306,13 +303,12 @@ def format_author_display_name(value: str) -> str | None:
             second_initial_source=second_initial,
         )
 
-    # Alexei Ivanov — второго инициала нет.
-    # Не угадываем отчество.
+    # Preserve English full names without inventing a missing patronymic.
     if re.fullmatch(
         r"[A-Z][a-zA-Z'’\-]+\s+[A-Z][a-zA-Z'’\-]+",
         value,
     ):
-        return None
+        return value
 
     return None
 
@@ -415,6 +411,62 @@ def normalize_author_identity_key(value: str) -> str | None:
         return f"{last_name} {_initial(first_name)} {_initial(patronymic)}"
 
     return None
+
+
+_RU_TO_LATIN = dict(zip(
+    "абвгдеёжзийклмнопрстуфхцчшщъыьэюя",
+    ("a", "b", "v", "g", "d", "e", "e", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya"),
+))
+
+
+def _latin_initial(value: str) -> str:
+    value = value.strip(" .").casefold()
+    if not value:
+        return ""
+    if value in {"yu", "ya", "yo", "zh", "kh", "ch", "sh"}:
+        return value.title()
+    return _RU_TO_LATIN.get(value[0], value[0]).upper()
+
+
+def _transliterated_token(value: str) -> str:
+    value = "".join(_RU_TO_LATIN.get(char, char) for char in value.casefold())
+    value = "".join(char for char in unicodedata.normalize("NFKD", value) if not unicodedata.combining(char))
+    value = re.sub(r"(?:skiy|skii|skij|sky)$", "sky", value)
+    return re.sub(r"[^a-z-]", "", value)
+
+
+def author_identity_signature(value: str) -> tuple[str, tuple[str, ...]] | None:
+    value = _clean_author_value(format_author_display_name(value) or value)
+    surname = r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+"
+    initials = r"(?:[A-ZА-ЯЁ]|Yu|Ya|Yo|Zh|Kh|Ch|Sh)"
+    match = re.fullmatch(rf"({surname})\s+({initials})\.\s*({initials})\.?", value)
+    if match:
+        last, first, second = match.groups()
+        return _transliterated_token(last), (_transliterated_token(_latin_initial(first)), _transliterated_token(_latin_initial(second)))
+    match = re.fullmatch(rf"({surname})\s+({initials})\.?", value)
+    if match:
+        last, first = match.groups()
+        return _transliterated_token(last), (_transliterated_token(_latin_initial(first)),)
+    match = re.fullmatch(rf"({surname})\s+({surname})", value)
+    if match and not _is_cyrillic(value):
+        first, last = match.groups()
+        return _transliterated_token(last), (_transliterated_token(_latin_initial(first)),)
+    return None
+
+
+def author_names_match(left: str, right: str) -> bool:
+    # Two explicitly written English first names are stronger evidence than
+    # their shared initial (John Smith must not become James Smith).
+    full = r"([A-Z][a-z]{1,})\s+([A-Z][a-z'’\-]{1,})"
+    left_full, right_full = re.fullmatch(full, left.strip()), re.fullmatch(full, right.strip())
+    if left_full and right_full and left_full[1].casefold() != right_full[1].casefold():
+        return False
+    first = author_identity_signature(left)
+    second = author_identity_signature(right)
+    if first is None or second is None or first[0] != second[0]:
+        return False
+    # Callers require an unambiguous row when the English name has no middle initial.
+    return all(a == b for a, b in zip(first[1], second[1]))
 
 
 def normalize_keyword(value: str) -> str:

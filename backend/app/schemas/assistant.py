@@ -4,11 +4,15 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+AssistantMode = Literal["auto", "publications", "general"]
+
+
 class AssistantAskRequest(BaseModel):
     question: str = Field(..., min_length=2)
     limit: int = Field(default=5, ge=1, le=6)
     min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
     detail_percent: int = Field(default=100, ge=80, le=100)
+    mode: AssistantMode = "auto"
 
 
 class AssistantSource(BaseModel):
@@ -63,6 +67,7 @@ class ChatMessageCreate(BaseModel):
     limit: int = Field(default=5, ge=1, le=6)
     min_similarity: float = Field(default=0.55, ge=0.0, le=1.0)
     detail_percent: int = Field(default=100, ge=80, le=100)
+    mode: AssistantMode = "auto"
 
 
 class ChatMessageRead(BaseModel):

@@ -62,6 +62,7 @@ class ExtractedPublicationMetadataRead(BaseModel):
     # Все извлеченные значения после нормализации.
     authors: list[str] = Field(default_factory=list)
     keywords: list[str] = Field(default_factory=list)
+    keywords_source: str = "none"
     topics: list[str] = Field(default_factory=list)
 
     # Уже существующие записи справочников. Frontend может сразу отметить эти id
@@ -69,6 +70,7 @@ class ExtractedPublicationMetadataRead(BaseModel):
     matched_authors: list[CatalogMatchRead] = Field(default_factory=list)
     matched_author_ids: list[int] = Field(default_factory=list)
     new_authors: list[str] = Field(default_factory=list)
+    unverified_authors: list[str] = Field(default_factory=list)
 
     matched_keywords: list[CatalogMatchRead] = Field(default_factory=list)
     matched_keyword_ids: list[int] = Field(default_factory=list)

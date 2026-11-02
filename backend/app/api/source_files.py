@@ -8,7 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.database import get_db
-from app.dependencies import get_embedding_service
 from app.models.source_file import SourceFile
 from app.schemas.source_file import (
     CatalogMatchRead,
@@ -19,7 +18,6 @@ from app.schemas.source_file import (
     SourceFileRead,
     SourceFileUpdate,
 )
-from app.services.embedding_service import EmbeddingService
 from app.services.metadata_matcher import (
     CatalogMatchResult,
     match_existing_authors,
@@ -121,7 +119,7 @@ async def _build_metadata_preview(
         [*existing_topic_suggestions, *extracted.topics]
     )[:5]
 
-    author_match_result = await match_existing_authors(db, extracted.authors)
+    author_match_result = await match_existing_authors(db, extracted.authors, allow_new_names=extracted.authors_source != "ocr" and extracted.title_source != "ocr")
     keyword_match_result = await match_existing_keywords(db, extracted.keywords)
     topic_match_result = await match_existing_topics(db, extracted.topics)
 
@@ -140,10 +138,12 @@ async def _build_metadata_preview(
             doi=extracted.doi,
             authors=extracted.authors,
             keywords=extracted.keywords,
+            keywords_source=extracted.keywords_source,
             topics=extracted.topics,
             matched_authors=_to_catalog_match_reads(author_match_result),
             matched_author_ids=[item.id for item in author_match_result.matches],
             new_authors=author_match_result.new_names,
+            unverified_authors=author_match_result.unverified_names,
             matched_keywords=_to_catalog_match_reads(keyword_match_result),
             matched_keyword_ids=[item.id for item in keyword_match_result.matches],
             new_keywords=keyword_match_result.new_names,

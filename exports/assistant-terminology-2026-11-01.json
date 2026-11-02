@@ -1,0 +1,83 @@
+{
+  "created_at": "2026-11-01T14:08:49.433195+00:00",
+  "dataset": "C:\\digital-scientiest\\backend\\evaluation\\assistant_cases.json",
+  "dataset_sha256": "1d6589dc9088ab1e74d04dbb76a165f73ec8d6025c4c1de163898bd3e2802b5b",
+  "include_generation": true,
+  "results": [
+    {
+      "id": "ore-role",
+      "category": "science",
+      "question": "Какую роль играли гранитоиды Ангаро-Витимского батолита в рудообразовании и откуда поступали металлы?",
+      "response": {
+        "question": "Какую роль играли гранитоиды Ангаро-Витимского батолита в рудообразовании и откуда поступали металлы?",
+        "answer": "Гранитоиды Ангаро‑Витимского батолита обеспечивали тепловой режим и, вероятно, подавали гидротермальные жидкости, способствующие ремобилизации и концентрированию рудных металлов.\n\nЭтапы эмиссии гранитоидов, особенно щелочных магм, создавали более реактивные флюиды, что привело к более продуктивному этапу жилообразования.\n\nМеталлы (золото, свинец, цинк) поступали из вмещающих пород, а не из самого батолита.",
+        "sources": [
+          {
+            "source_id": "chunk-143",
+            "publication_id": 1,
+            "publication_title": "Timing of Ore Mineralisation in Deposits of the Baikal-Muya Belt and the Barguzin-Vitim Super-Terrain (Transbaikalie)",
+            "chunk_id": 143,
+            "chunk_index": 1,
+            "similarity": 0.8612693034846021
+          },
+          {
+            "source_id": "chunk-190",
+            "publication_id": 1,
+            "publication_title": "Timing of Ore Mineralisation in Deposits of the Baikal-Muya Belt and the Barguzin-Vitim Super-Terrain (Transbaikalie)",
+            "chunk_id": 190,
+            "chunk_index": 48,
+            "similarity": 0.8636134348146075
+          },
+          {
+            "source_id": "chunk-191",
+            "publication_id": 1,
+            "publication_title": "Timing of Ore Mineralisation in Deposits of the Baikal-Muya Belt and the Barguzin-Vitim Super-Terrain (Transbaikalie)",
+            "chunk_id": 191,
+            "chunk_index": 49,
+            "similarity": 0.8478187504030824
+          }
+        ],
+        "answer_blocks": [
+          {
+            "text": "Гранитоиды Ангаро‑Витимского батолита обеспечивали тепловой режим и, вероятно, подавали гидротермальные жидкости, способствующие ремобилизации и концентрированию рудных металлов.",
+            "source_ids": [
+              "chunk-143",
+              "chunk-190"
+            ]
+          },
+          {
+            "text": "Этапы эмиссии гранитоидов, особенно щелочных магм, создавали более реактивные флюиды, что привело к более продуктивному этапу жилообразования.",
+            "source_ids": [
+              "chunk-191",
+              "chunk-190"
+            ]
+          },
+          {
+            "text": "Металлы (золото, свинец, цинк) поступали из вмещающих пород, а не из самого батолита.",
+            "source_ids": [
+              "chunk-143",
+              "chunk-190"
+            ]
+          }
+        ],
+        "answer_origin": "internal",
+        "catalog": null
+      },
+      "failures": [],
+      "seconds": 61.1,
+      "passed": true
+    }
+  ],
+  "corpus": {
+    "publications": 48,
+    "statuses": {
+      "processed": 48
+    },
+    "metadata_sha256": "9e399a0e9d6b6bb811e844acbae8b018056f6288e464dc0089be4076374484eb"
+  },
+  "summary": {
+    "cases": 1,
+    "passed": 1,
+    "failures_by_category": {}
+  }
+}

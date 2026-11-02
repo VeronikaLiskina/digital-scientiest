@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.db.database import get_db
 from app.models.publication_import import ImportBatch, ImportItem
 from app.models.source_file import SourceFile
+from app.models.publication import Publication
 from app.schemas.publication_import import ImportBatchRead, ImportItemRead
 from app.schemas.source_file import CatalogMatchRead, ExtractedPublicationMetadataRead
 from app.services.embedding_service import EmbeddingService
@@ -66,6 +67,7 @@ def _to_catalog_match_reads(result: CatalogMatchResult) -> list[CatalogMatchRead
 def _batch_load_options():
     return (
         selectinload(ImportBatch.items).selectinload(ImportItem.source_file),
+        selectinload(ImportBatch.items).selectinload(ImportItem.publication).selectinload(Publication.authors),
     )
 
 
@@ -86,7 +88,12 @@ def _item_to_read(item: ImportItem) -> ImportItemRead:
         ),
         error_message=item.error_message,
         extracted_metadata=extracted,
-        title=item.title,
+        verified_authors=(
+            [author.full_name for author in item.publication.authors]
+            if item.publication is not None else
+            [author.name for author in extracted.matched_authors] if extracted else []
+        ),
+        title=item.publication.title if item.publication is not None else item.title,
         title_source=item.title_source,
         title_confidence=item.title_confidence,
         created_at=item.created_at,
@@ -152,7 +159,7 @@ async def _build_extracted_metadata_read(
     )
     extracted.topics = _merge_names([*existing_topic_suggestions, *extracted.topics])[:5]
 
-    author_match_result = await match_existing_authors(db, extracted.authors)
+    author_match_result = await match_existing_authors(db, extracted.authors, allow_new_names=extracted.authors_source != "ocr" and extracted.title_source != "ocr")
     keyword_match_result = await match_existing_keywords(db, extracted.keywords)
     topic_match_result = await match_existing_topics(db, extracted.topics)
 
@@ -167,10 +174,12 @@ async def _build_extracted_metadata_read(
         doi=extracted.doi,
         authors=extracted.authors,
         keywords=extracted.keywords,
+        keywords_source=extracted.keywords_source,
         topics=extracted.topics,
         matched_authors=_to_catalog_match_reads(author_match_result),
         matched_author_ids=[item.id for item in author_match_result.matches],
         new_authors=author_match_result.new_names,
+        unverified_authors=author_match_result.unverified_names,
         matched_keywords=_to_catalog_match_reads(keyword_match_result),
         matched_keyword_ids=[item.id for item in keyword_match_result.matches],
         new_keywords=keyword_match_result.new_names,
@@ -330,7 +339,7 @@ async def get_publication_import_item(
     result = await db.execute(
         select(ImportItem)
         .where(ImportItem.id == item_id)
-        .options(selectinload(ImportItem.source_file))
+        .options(selectinload(ImportItem.source_file), selectinload(ImportItem.publication).selectinload(Publication.authors))
     )
     item = result.scalar_one_or_none()
 

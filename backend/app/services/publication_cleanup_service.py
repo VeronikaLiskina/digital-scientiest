@@ -15,6 +15,7 @@ from app.models.keyword import Keyword
 from app.models.publication import Publication
 from app.models.source_file import SourceFile
 from app.models.topic import Topic
+from app.services.publication_author_policy import is_required_author
 
 
 @dataclass(frozen=True, slots=True)
@@ -116,7 +117,7 @@ async def delete_publication_with_resources(
 ) -> PublicationCleanupResult:
     """Delete a publication and resources that are no longer used elsewhere."""
 
-    author_ids = [author.id for author in publication.authors]
+    author_ids = [author.id for author in publication.authors if not is_required_author(author.full_name)]
     topic_ids = [topic.id for topic in publication.topics]
     keyword_ids = [keyword.id for keyword in publication.keywords]
     source_file_id = publication.source_file_id

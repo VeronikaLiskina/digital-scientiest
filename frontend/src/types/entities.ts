@@ -3,6 +3,7 @@ export type EntityId = number;
 export interface Author {
   id: EntityId;
   full_name: string;
+  is_required?: boolean;
   organization?: string | null;
 }
 

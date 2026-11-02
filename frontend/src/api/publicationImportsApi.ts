@@ -11,6 +11,7 @@ export type PublicationImportItem = {
   processing_status?: "queued" | "processing" | "completed" | "failed" | string | null;
   error_message?: string | null;
   extracted_metadata?: ExtractedPublicationMetadata | null;
+  verified_authors?: string[];
   title?: string | null;
   title_source?: string | null;
   title_confidence?: string | null;

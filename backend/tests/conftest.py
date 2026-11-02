@@ -1,5 +1,7 @@
 import os
+import uuid
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
@@ -8,6 +10,7 @@ from sqlalchemy.pool import NullPool
 
 from app.main import app
 from app.db.database import Base, get_db
+from app.core.config import settings
 
 # Импортируем модели, чтобы SQLAlchemy знал, какие таблицы создавать
 from app.models.author import Author  # noqa: F401
@@ -36,6 +39,33 @@ TestingSessionLocal = async_sessionmaker(
     bind=test_engine,
     expire_on_commit=False,
 )
+
+
+@pytest.fixture(autouse=True)
+def disable_shared_ocr_cache(monkeypatch):
+    # OCR tests often replace recognition; cached text must not hide those
+    # replacements or leak between tests. Cache integration opts in explicitly.
+    monkeypatch.setattr(settings, "pdf_ocr_cache_enabled", False)
+    from app.api import assistant
+    from collections import OrderedDict
+    monkeypatch.setattr(assistant, "_translation_cache", OrderedDict())
+
+
+@pytest.fixture
+def ocr_cache(monkeypatch):
+    from app.services import pdf_ocr_cache
+
+    monkeypatch.setattr(settings, "pdf_ocr_cache_enabled", True)
+    monkeypatch.setattr(pdf_ocr_cache, "_unavailable_until", 0)
+    namespace = f"test:ocr:{uuid.uuid4().hex}"
+    monkeypatch.setattr(pdf_ocr_cache, "CACHE_KEY", namespace + ":pages")
+    monkeypatch.setattr(pdf_ocr_cache, "CACHE_ORDER_KEY", namespace + ":order")
+    client = pdf_ocr_cache._client()
+    client.ping()
+    try:
+        yield pdf_ocr_cache
+    finally:
+        client.delete(namespace + ":pages", namespace + ":order")
 
 
 async def override_get_db():

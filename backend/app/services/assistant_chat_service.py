@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from app.models.chat import Chat, ChatMessage
 from app.schemas.assistant import ChatDetail, ChatMessageRead, ChatRead
 from app.services.assistant_answer_service import single_answer_block
@@ -16,6 +18,36 @@ def build_conversation(messages: list[ChatMessage], *, limit: int = 8) -> str:
         f"{labels.get(message.role, message.role)}: {message.content}"
         for message in recent_messages
     )
+
+
+def last_publication_context(messages: list[ChatMessage]) -> tuple[int, ...] | None:
+    """Recover the selected documents from persisted response data, not prose."""
+    message = next((m for m in reversed(messages) if m.role == "assistant"), None)
+    if message is None or _legacy_answer_origin(message) == "external":
+        return None
+    if message.catalog is not None:
+        return tuple(dict.fromkeys(item["publication_id"] for item in message.catalog.get("items", [])))
+    if message.sources:
+        return tuple(dict.fromkeys(source["publication_id"] for source in message.sources))
+    return None
+
+
+def contextual_search_question(question: str, conversation: str | None) -> str:
+    """Resolve short follow-ups using user questions, never prior answer facts."""
+    if not conversation or len(question.split()) > 18:
+        return question
+    continuation = re.search(
+        r"(?:\b(?:она|он|ней|него|они|их|них|это|этот|этого|этому|этом|этой|эти|этих|там|этим|them|those|its)\b|"
+        r"^(?:а\s+(?:как|какие|какой|когда|где|почему)|подробнее|поясни|продолжи|"
+        r"and\s+(?:how|what|why)|tell me more))", question, re.I,
+    )
+    if continuation is None:
+        return question
+    previous = [line.removeprefix("Пользователь:").strip() for line in conversation.splitlines()
+                if line.startswith("Пользователь:")]
+    # Keep enough user context for a chain of follow-ups without feeding an
+    # ever-growing history into embeddings or copying assistant assertions.
+    return "\n".join([*(text[:1000] for text in previous[-2:]), question])
 
 
 def message_read(message: ChatMessage) -> ChatMessageRead:

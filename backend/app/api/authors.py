@@ -7,6 +7,7 @@ from app.models.author import Author
 from app.schemas.author import AuthorCreate, AuthorRead, AuthorUpdate
 from app.services.author_resolver import find_author_by_identity, get_or_create_author
 from app.utils.normalization import format_author_display_name, normalize_author_name
+from app.services.publication_author_policy import is_required_author
 
 
 router = APIRouter(prefix="/authors", tags=["Authors"])
@@ -72,6 +73,9 @@ async def update_author(
         raise HTTPException(status_code=404, detail="Author not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if is_required_author(author.full_name) and "full_name" in update_data:
+        if not update_data["full_name"] or not is_required_author(update_data["full_name"]):
+            raise HTTPException(status_code=409, detail="Нельзя изменить личность обязательного автора каталога")
 
     if "full_name" in update_data and update_data["full_name"] is not None:
         display_name = format_author_display_name(update_data["full_name"]) or update_data["full_name"].strip()
@@ -105,6 +109,9 @@ async def delete_author(
 
     if author is None:
         raise HTTPException(status_code=404, detail="Author not found")
+
+    if is_required_author(author.full_name):
+        raise HTTPException(status_code=409, detail="Иванов А.В. — обязательный автор всех публикаций каталога")
 
     await db.delete(author)
     await db.commit()

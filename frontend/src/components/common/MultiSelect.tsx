@@ -11,11 +11,12 @@ interface MultiSelectProps {
   options: MultiSelectOption[];
   onChange: (values: number[]) => void;
   placeholder?: string;
+  lockedValues?: number[];
 }
 
 const DEFAULT_VISIBLE_COUNT = 8;
 
-export function MultiSelect({ label, values, options, onChange, placeholder }: MultiSelectProps) {
+export function MultiSelect({ label, values, options, onChange, placeholder, lockedValues = [] }: MultiSelectProps) {
   const [search, setSearch] = useState("");
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -39,6 +40,7 @@ export function MultiSelect({ label, values, options, onChange, placeholder }: M
     : filteredOptions.slice(0, DEFAULT_VISIBLE_COUNT);
 
   function toggleValue(id: number) {
+    if (lockedValues.includes(id)) return;
     if (values.includes(id)) {
       onChange(values.filter((value) => value !== id));
       return;
@@ -48,7 +50,7 @@ export function MultiSelect({ label, values, options, onChange, placeholder }: M
   }
 
   function clearAll() {
-    onChange([]);
+    onChange(lockedValues);
   }
 
   return (
@@ -77,10 +79,11 @@ export function MultiSelect({ label, values, options, onChange, placeholder }: M
               key={option.id}
               type="button"
               onClick={() => toggleValue(option.id)}
-              title="Убрать из выбранных"
+              disabled={lockedValues.includes(option.id)}
+              title={lockedValues.includes(option.id) ? "Обязательный автор каталога" : "Убрать из выбранных"}
             >
               {option.label}
-              <span>×</span>
+              {!lockedValues.includes(option.id) && <span>×</span>}
             </button>
           ))}
         </div>
@@ -95,6 +98,7 @@ export function MultiSelect({ label, values, options, onChange, placeholder }: M
               <input
                 type="checkbox"
                 checked={checked}
+                disabled={lockedValues.includes(option.id)}
                 onChange={() => toggleValue(option.id)}
               />
               <span>{option.label}</span>

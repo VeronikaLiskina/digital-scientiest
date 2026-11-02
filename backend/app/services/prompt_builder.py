@@ -114,6 +114,12 @@ def build_rag_prompt(
         )
     )
 
+    language_instruction = (
+        "Write the answer strictly in English. Translate Russian evidence into English. "
+        "Keep JSON keys and source_ids unchanged.\n"
+        if re.search(r"[A-Za-z]", question) and not re.search(r"[А-Яа-яЁё]", question)
+        else "Пиши ответ по-русски, сохраняя научные обозначения и значения.\n"
+    )
     return (
         _conversation_prefix(conversation)
         + "Ниже приведены фрагменты научных публикаций, найденные семантическим поиском.\n"
@@ -173,13 +179,16 @@ def build_rag_prompt(
         + output_instructions
         + f"<retrieved_context>\n{context}\n</retrieved_context>\n\n"
         f"Вопрос пользователя:\n{question}\n\n"
-        "Ответ:"
+        + language_instruction
+        + "Ответ:"
     )
 
 
 def build_general_fallback_prompt(
     question: str,
     conversation: str | None = None,
+    *,
+    archive_searched: bool = True,
 ) -> str:
     conversation_part = ""
     if conversation:
@@ -191,9 +200,13 @@ def build_general_fallback_prompt(
 
     return (
         conversation_part
-        + "В загруженных публикациях не найдено подходящих фрагментов.\n"
-        "Дай краткий и полезный ответ из общих знаний. Не повторяй уведомление об "
-        "отсутствии источников — оно будет добавлено программно перед ответом.\n"
+        + ("В загруженных публикациях не найдено подходящих фрагментов.\n"
+           if archive_searched else "Пользователь общается в свободном диалоге.\n")
+        + "Дай естественный и полезный ответ из общих знаний. Не повторяй уведомление "
+        "о происхождении ответа — оно показывается отдельно в интерфейсе.\n"
+        "Используй историю для продолжения беседы, но не представляй прошлые ответы "
+        "как проверенные факты из архива. На приветствие ответь приветствием; если "
+        "пользователь просит объяснение или помощь, ответь по существу.\n"
         "Не придумывай публикации, ссылки, цитаты или точные сведения. Если ответ "
         "неизвестен или ненадёжен, прямо сообщи об этом.\n"
         "Отвечай на языке вопроса пользователя.\n\n"

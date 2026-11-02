@@ -10,11 +10,12 @@ from app.repositories.semantic_search_repository import (
     SemanticSearchRepository,
 )
 from app.services.embedding_service import EmbeddingService
-from app.services.local_llm_service import LocalLLMError
+from app.services.llm.base import LocalLLMError
 from app.services.reranker_service import RerankerService
 from app.services.source_relevance import (
     diversify_chunks_by_publication,
     filter_relevant_sources,
+    is_cross_language_pair,
 )
 
 
@@ -102,7 +103,11 @@ class AssistantRetrievalService:
 
         translated_candidates: list[dict[str, Any]] = []
         reranker_question = question
-        if self._needs_bilingual_fallback(relevant_candidates):
+        translation_attempted = self._needs_bilingual_fallback(relevant_candidates) or any(
+            is_cross_language_pair(question, str(chunk.get("text") or ""))
+            for chunk in original_candidates
+        )
+        if translation_attempted:
             translated_query = await self._translate_query(
                 question,
                 source_language=source_language,
@@ -138,6 +143,21 @@ class AssistantRetrievalService:
             combined_candidates,
             limit=limit,
         )
+        # Two lexical matches are not sufficient evidence of strong retrieval:
+        # the cross-encoder may reject both. Check its decision before skipping
+        # bilingual search, otherwise English-only evidence is silently lost.
+        if not translation_attempted and self._needs_bilingual_fallback(reranked):
+            translated_query = await self._translate_query(question, source_language=source_language)
+            if translated_query:
+                translated_results = await self._search(translated_query, min_similarity)
+                translated_candidates = self._apply_relevance_gate(
+                    translated_query, translated_results, allow_semantic_fallback=True,
+                )
+                if translated_candidates:
+                    additional = await asyncio.to_thread(
+                        reranker.rerank, translated_query, translated_candidates, limit=limit,
+                    )
+                    reranked = unique_ranked_chunks([*reranked, *additional])
         return diversify_chunks_by_publication(reranked, limit)
 
     async def _search(
@@ -194,7 +214,7 @@ class AssistantRetrievalService:
                 source_language=source_language,
             )
         except LocalLLMError as exc:
-            logger.warning("Bilingual search query translation failed: %s", exc)
+            logger.warning("Bilingual search query translation failed: error=%s", type(exc).__name__)
             return ""
 
         translated_query = translated_query.strip()

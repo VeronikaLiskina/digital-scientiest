@@ -56,10 +56,12 @@ type ExtractedWithMatches = {
   authors?: string[];
   topics?: string[];
   keywords?: string[];
+  keywords_source?: string;
 
   matched_author_ids?: number[];
   matched_authors?: CatalogMatch[];
   new_authors?: string[];
+  unverified_authors?: string[];
 
   matched_topic_ids?: number[];
   matched_topics?: CatalogMatch[];
@@ -84,6 +86,7 @@ export function PublicationCreatePage() {
   const [selectedPdfFile, setSelectedPdfFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [metadataMessage, setMetadataMessage] = useState("");
+  const [unverifiedAuthors, setUnverifiedAuthors] = useState<string[]>([]);
   const [metadataReviewStatus, setMetadataReviewStatus] = useState<"idle" | "needs_review" | "manual_entry">("idle");
   const [isSaving, setIsSaving] = useState(false);
   const [isExtractingMetadata, setIsExtractingMetadata] = useState(false);
@@ -140,6 +143,7 @@ export function PublicationCreatePage() {
           [
             "Данные автоматически извлечены из PDF. Проверьте название, авторов, темы и ключевые слова перед сохранением.",
             extracted.title_warning,
+            extracted.keywords_source === "suggested" ? "Ключевые слова предложены системой по тексту публикации — проверьте их." : null,
           ]
             .filter(Boolean)
             .join(" "),
@@ -162,6 +166,7 @@ export function PublicationCreatePage() {
     options: { sourceFileId?: number | null; importItemId?: string; replaceSelection?: boolean } = {},
   ) {
     const matchedAuthorIds = getMatchedIds(extracted.matched_author_ids, extracted.matched_authors);
+    setUnverifiedAuthors(extracted.unverified_authors ?? []);
     const matchedTopicIds = getMatchedIds(extracted.matched_topic_ids, extracted.matched_topics);
     const matchedKeywordIds = getMatchedIds(extracted.matched_keyword_ids, extracted.matched_keywords);
 
@@ -295,6 +300,7 @@ export function PublicationCreatePage() {
         [
           "Данные автоматически извлечены из PDF. Проверьте название, авторов, темы и ключевые слова перед сохранением.",
           extracted.title_warning,
+          extracted.keywords_source === "suggested" ? "Ключевые слова предложены системой по тексту публикации — проверьте их." : null,
         ]
           .filter(Boolean)
           .join(" "),
@@ -353,6 +359,7 @@ export function PublicationCreatePage() {
       />
 
       {error && <p className="error">{error}</p>}
+      {unverifiedAuthors.length > 0 && <p className="error">Авторы требуют ручной проверки: {unverifiedAuthors.join(", ")}. Добавьте их после проверки написания.</p>}
       {metadataMessage && (
         <p className={metadataReviewStatus === "needs_review" ? "warning" : "success"}>
           {metadataMessage}

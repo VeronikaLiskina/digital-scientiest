@@ -20,6 +20,7 @@ from app.services.publication_cleanup_service import (
     delete_publication_with_resources,
 )
 from app.services.author_resolver import get_or_create_author
+from app.services.publication_author_policy import with_required_author
 from app.services.keyword_resolver import get_or_create_keyword
 from app.services.topic_resolver import get_or_create_topic
 
@@ -189,7 +190,7 @@ async def resolve_authors(
     for name in names:
         authors.append(await get_or_create_author(db, name))
 
-    return dedupe_by_id(authors)
+    return dedupe_by_id(await with_required_author(db, authors))
 
 
 async def resolve_topics(
@@ -575,6 +576,8 @@ async def update_publication(
             ids=data.author_ids or [],
             names=data.author_names or [],
         )
+    else:
+        publication.authors = await with_required_author(db, list(publication.authors))
 
     if data.topic_ids is not None or data.topic_names is not None:
         publication.topics = await resolve_topics(

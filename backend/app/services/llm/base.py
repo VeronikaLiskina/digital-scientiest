@@ -9,9 +9,16 @@ ResponseFormat = str | dict[str, Any] | None
 class LocalLLMError(RuntimeError):
     """Base error for failures that can be safely shown by the assistant API."""
 
+    provider_status: int | None = None
+    provider_error_code: str | None = None
+
 
 class LLMConfigurationError(LocalLLMError):
     """The selected provider is missing required configuration."""
+
+
+class LLMAccessDeniedError(LocalLLMError):
+    """The provider refused this request without a confirmed settings error."""
 
 
 class LLMUnavailableError(LocalLLMError):

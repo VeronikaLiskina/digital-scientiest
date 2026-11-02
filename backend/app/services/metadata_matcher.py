@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.utils.normalization import (
     normalize_author_name,
     normalize_keyword,
     normalize_topic,
+    author_names_match,
 )
 
 
@@ -26,6 +27,7 @@ class CatalogMatch:
 class CatalogMatchResult:
     matches: list[CatalogMatch]
     new_names: list[str]
+    unverified_names: list[str] = field(default_factory=list)
 
 
 def _dedupe_names(values: list[str]) -> list[str]:
@@ -50,10 +52,13 @@ def _dedupe_names(values: list[str]) -> list[str]:
 async def match_existing_authors(
     db: AsyncSession,
     author_names: list[str],
+    *,
+    allow_new_names: bool = True,
 ) -> CatalogMatchResult:
     matches: list[CatalogMatch] = []
     new_names: list[str] = []
     seen_match_ids: set[int] = set()
+    unverified: list[str] = []
 
     result = await db.execute(select(Author).order_by(Author.full_name))
     existing_authors = list(result.scalars().all())
@@ -77,6 +82,7 @@ async def match_existing_authors(
         # Если парсер не смог привести к Фамилия И.О., не автосвязываем и не предлагаем создавать.
         # Пользователь всё равно может вручную добавить автора в форме.
         if canonical_name is None:
+            unverified.append(raw_name)
             continue
 
         normalized = normalize_author_name(canonical_name)
@@ -85,6 +91,14 @@ async def match_existing_authors(
         author = by_normalized_name.get(normalized)
         if author is None and identity_key:
             author = by_identity_key.get(identity_key)
+        if author is None:
+            compatible = [candidate for candidate in existing_authors
+                          if author_names_match(canonical_name, candidate.full_name)]
+            if len(compatible) == 1:
+                author = compatible[0]
+            elif len(compatible) > 1:
+                unverified.append(raw_name)
+                continue
 
         if author is not None:
             if author.id in seen_match_ids:
@@ -100,9 +114,12 @@ async def match_existing_authors(
             )
             continue
 
-        new_names.append(canonical_name)
+        if allow_new_names:
+            new_names.append(canonical_name)
+        else:
+            unverified.append(raw_name)
 
-    return CatalogMatchResult(matches=matches, new_names=_dedupe_names(new_names))
+    return CatalogMatchResult(matches=matches, new_names=_dedupe_names(new_names), unverified_names=_dedupe_names(unverified))
 
 
 async def match_existing_keywords(

@@ -1,0 +1,10 @@
+[
+  {"id":"hello","category":"conversation","generation":true,"question":"Привет","origin":"external","no_sources":true,"answer_patterns":["привет|здравств"],"forbidden_patterns":["недостаточно информации|загрузите публикации"]},
+  {"id":"how-are-you","category":"conversation","generation":true,"question":"Привет, как дела?","origin":"external","no_sources":true,"forbidden_patterns":["недостаточно информации|загрузите публикации"]},
+  {"id":"programming","category":"general","generation":true,"mode":"general","question":"Объясни рекурсию на простом примере","origin":"external","no_sources":true,"answer_patterns":["рекурс"]},
+  {"id":"creative","category":"general","generation":true,"question":"Придумай короткое четверостишие о Байкале","origin":"external","no_sources":true,"answer_patterns":["Байкал"]},
+  {"id":"chat-memory","category":"conversation","generation":true,"history":["Меня зовут Ника. Давай поговорим о музыке."],"question":"А как меня зовут?","origin":"external","no_sources":true,"answer_patterns":["Ника"]},
+  {"id":"auto-fallback","category":"general","generation":true,"question":"Что такое рекурсия в программировании?","origin":"external","no_sources":true,"answer_patterns":["рекурс"]},
+  {"id":"strict-publications","category":"no_answer","generation":true,"mode":"publications","question":"Какая урожайность пшеницы в Иркутской области в 2050 году указана в загруженных публикациях?","origin":"internal","no_sources":true,"answer_patterns":["недостаточно|нет|не содерж"]},
+  {"id":"catalog-in-general-mode","category":"catalog","question":"Какие публикации есть по магнитизму?","mode":"general","origin":"catalog","include_publications":[35,41]}
+]

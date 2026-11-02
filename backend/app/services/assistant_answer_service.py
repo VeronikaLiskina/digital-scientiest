@@ -3,7 +3,7 @@ import math
 import re
 from typing import Any
 
-from app.services.local_llm_service import LLMGenerationError
+from app.services.llm.base import LLMGenerationError
 
 
 JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*(.*?)\s*```$", re.DOTALL | re.IGNORECASE)
@@ -98,7 +98,7 @@ def parse_structured_rag_answer(
         kind = raw_block["kind"]
         text = raw_block["text"]
         raw_source_ids = raw_block["source_ids"]
-        if kind not in {"answer", "insufficient"}:
+        if not isinstance(kind, str) or kind not in {"answer", "insufficient"}:
             raise LLMGenerationError("Блок ответа модели содержит неизвестный тип")
         if not isinstance(text, str) or not text.strip():
             raise LLMGenerationError("Модель вернула пустой текстовый блок")
@@ -106,7 +106,7 @@ def parse_structured_rag_answer(
         if len(text) > MAX_BLOCK_TEXT_LENGTH:
             raise LLMGenerationError("Текстовый блок модели превышает допустимый размер")
 
-        if not isinstance(raw_source_ids, list):
+        if not isinstance(raw_source_ids, list) or any(not isinstance(value, str) for value in raw_source_ids):
             raise LLMGenerationError("source_ids блока ответа должен быть списком")
         if kind == "answer" and not raw_source_ids:
             raise LLMGenerationError("Содержательный блок модели не содержит source_id")

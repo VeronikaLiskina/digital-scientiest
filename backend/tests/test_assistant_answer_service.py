@@ -8,7 +8,7 @@ from app.services.assistant_answer_service import (
     validate_human_answer,
     validate_source_coverage,
 )
-from app.services.local_llm_service import OllamaGenerationError
+from app.services.llm.base import LLMGenerationError
 
 
 @pytest.fixture(autouse=True)
@@ -65,7 +65,7 @@ def test_structured_answer_keeps_inline_source_mapping_and_deduplicates_ids():
     ],
 )
 def test_structured_answer_rejects_missing_unknown_or_extra_source_data(raw_answer):
-    with pytest.raises(OllamaGenerationError):
+    with pytest.raises(LLMGenerationError):
         parse_structured_rag_answer(
             raw_answer,
             allowed_source_ids={"chunk-10"},
@@ -90,7 +90,7 @@ def test_structured_answer_allows_empty_sources_for_insufficient_information():
 
 
 def test_structured_answer_rejects_overcitation_in_one_semantic_block():
-    with pytest.raises(OllamaGenerationError, match="слишком много ссылок"):
+    with pytest.raises(LLMGenerationError, match="слишком много ссылок"):
         parse_structured_rag_answer(
             (
                 '{"blocks":[{"kind":"answer","text":"Один конкретный факт.",'
@@ -151,7 +151,7 @@ def test_source_coverage_accepts_four_of_five_sources_at_eighty_percent():
 
 
 def test_source_coverage_rejects_less_than_requested_share():
-    with pytest.raises(OllamaGenerationError, match="80%"):
+    with pytest.raises(LLMGenerationError, match="80%"):
         validate_source_coverage(
             [
                 {
@@ -209,7 +209,7 @@ def test_human_answer_validation_allows_useful_scientific_numbers_and_terms():
     ],
 )
 def test_human_answer_validation_rejects_wrong_language_and_service_noise(text):
-    with pytest.raises(OllamaGenerationError):
+    with pytest.raises(LLMGenerationError):
         validate_human_answer(
             [{"text": text, "source_ids": ["chunk-10"]}],
             expected_language="ru",

@@ -1,17 +1,27 @@
 from collections import Counter
 from datetime import datetime
+from dataclasses import replace
 from pathlib import Path
 from tempfile import NamedTemporaryFile
+import logging
 import re
+
+from fastapi import HTTPException
 
 from app.core.config import settings
 from app.services.ai_publication_analysis_service import analyze_publication_text
-from app.services.pdf_text_extraction import extract_pdf_pages
+from app.services.pdf_text_extraction import OcrUnavailableError, extract_pdf_pages
+from app.services.pdf_layout_service import SERVICE_RE as LAYOUT_SERVICE_RE, LABEL_RE as LAYOUT_LABEL_RE, native_page_metadata
 from app.services.publication_metadata_models import (
     ExtractedPublicationMetadata,
     PageText,
     TitleMatch,
 )
+from app.utils.text_quality import has_text_corruption, is_readable_text
+from app.utils.normalization import format_author_display_name as canonical_author_name
+
+
+logger = logging.getLogger(__name__)
 
 try:
     import pymorphy3
@@ -23,9 +33,6 @@ MORPH = pymorphy3.MorphAnalyzer() if pymorphy3 is not None else None
 
 DOI_RE = re.compile(r"10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)
 YEAR_RE = re.compile(r"\b(19\d{2}|20\d{2})\b")
-LATIN_FULL_NAME_RE = re.compile(
-    r"\b([A-Z][a-zA-Z'’\-]{2,})\s+([A-Z][a-zA-Z'’\-]{2,})\b"
-)
 UUID_FILENAME_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
     re.IGNORECASE,
@@ -61,13 +68,6 @@ SECTION_START_RE = re.compile(
     r"^(abstract|аннотация|keywords|key\s*words|ключевые\s+слова|"
     r"1\.\s*introduction|introduction|введение|article\s+info)\b",
     re.IGNORECASE,
-)
-KEYWORDS_RE = re.compile(
-    r"(?:keywords|key\s*words|ключевые\s+слова)\s*(?::|—|-|\n)\s*"
-    r"(.+?)"
-    r"(?=\n\s*(?:abstract|аннотация|introduction|введение|references|"
-    r"список\s+литературы|1\.|article\s+info)\b|$)",
-    re.IGNORECASE | re.DOTALL,
 )
 BAD_TITLE_RE = re.compile(
     r"(doi|issn|isbn|udc|удк|journal|volume|vol\.|issue|received|accepted|published|"
@@ -306,7 +306,7 @@ def _clean_metadata_line(line: str) -> str:
     line = line.replace("\u00a0", " ")
     line = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", line)
     line = re.sub(r"\s+", " ", line)
-    return line.strip(" \t\n\r.;,")
+    return line.strip(" \t\n\r;,‚")
 
 
 def _repair_cyrillic_mojibake(text: str) -> str:
@@ -358,17 +358,29 @@ def _extract_metadata_lines(text: str) -> list[str]:
     return lines
 
 
-def _extract_pages(file_path: Path, max_pages: int = 15) -> list[PageText]:
+def _extract_pages(
+    file_path: Path, max_pages: int = 3, *,
+    page_indexes: set[int] | None = None, force_ocr: bool = False,
+) -> list[PageText]:
     pages: list[PageText] = []
-    extraction = extract_pdf_pages(file_path, max_pages=max_pages)
+    extraction = extract_pdf_pages(
+        file_path, max_pages=max_pages, page_indexes=page_indexes, force_ocr=force_ocr,
+    )
+    native_metadata = native_page_metadata(file_path, {
+        page.index for page in extraction.pages if page.source == "native" and page.index < 3
+    })
 
     for extracted_page in extraction.pages:
         text = _clean_text(extracted_page.text)
+        native_page = native_metadata.get(extracted_page.index)
         pages.append(
             PageText(
                 number=extracted_page.index,
                 text=text,
                 lines=_extract_metadata_lines(text),
+                source=extracted_page.source,
+                layout_title=extracted_page.layout_title or (native_page.title if native_page else None),
+                author_lines=[_clean_text(line) for line in native_page.author_lines] if native_page else None,
             )
         )
 
@@ -410,8 +422,12 @@ def _filename_title_quality(title: str | None, *, raw_title: str | None = None) 
         return 0
 
     normalized = re.sub(r"\s+", " ", title).strip()
+    if not is_readable_text(normalized, strict=True):
+        return 0
     if len(normalized) < 8:
         return 0
+    if normalized.split()[-1].lower() in {"a", "t", "c", "at", "of", "and", "the", "in", "for", "on"}:
+        return 1
 
     normalized_lower = normalized.lower()
     compact = re.sub(r"[\s._-]+", "-", normalized_lower).strip("-")
@@ -659,6 +675,10 @@ def _contains_ru_geography_name(value: str) -> bool:
 
 
 def _score_title_candidate(line: str, index: int) -> int:
+    if has_text_corruption(line):
+        return -10
+    if re.match(r"^(?:contents lists available at|journal homepage:|check for updates|crossmark)\b", line, re.IGNORECASE):
+        return -10
     normalized = line.strip().lower()
     score = 0
 
@@ -794,6 +814,10 @@ def _normalize_title(title: str | None) -> str | None:
 def _is_bad_extracted_title(title: str | None) -> bool:
     if not title:
         return True
+    if not is_readable_text(title, strict=True):
+        return True
+    if LAYOUT_SERVICE_RE.search(title) or LAYOUT_LABEL_RE.fullmatch(title):
+        return True
 
     low = title.lower()
 
@@ -837,7 +861,7 @@ def _pdf_title_quality(title_match: TitleMatch | None) -> int:
     if AFFILIATION_RE.search(title) or ORG_OR_JOURNAL_RE.search(title):
         return 0
 
-    if _line_looks_like_author_list(title):
+    if not title_match.from_layout and _line_looks_like_author_list(title):
         return 0
 
     words = re.findall(r"[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё\-]{2,}", title)
@@ -890,21 +914,16 @@ def _select_title(
     """
     Выбирает итоговое название публикации.
 
-    Для текущего MVP имя файла снова является основным источником title,
-    если оно похоже на нормальное название статьи. Это стабильнее для уже
-    разделённых PDF-статей, где файл часто называется по названию публикации.
-
-    Извлечение title из текста PDF используем только как fallback:
-    - если имя файла техническое;
-    - если имя файла начинается с номера/служебного идентификатора;
-    - если имя файла похоже на hash, scan, article_001 и т.п.
+    Достоверный заголовок страницы имеет приоритет. Читаемое имя файла
+    используется, если на странице не удалось выделить уверенный заголовок.
     """
 
     pdf_quality = _pdf_title_quality(pdf_title_match)
 
-    # Главное изменение: если имя файла качественное, не перебиваем его
-    # эвристическим title из PDF. Именно PDF title extraction давал много
-    # ложных заголовков из журналов, сборников, содержания и служебных блоков.
+    if pdf_title_match is not None and pdf_quality >= 8:
+        return pdf_title_match.title, "pdf", "high", None
+
+    # A filename can be incomplete; it is only a fallback for uncertain text.
     if filename_title and filename_quality >= 4:
         confidence = "high" if filename_quality >= 5 else "medium"
         warning = "Название взято из имени файла, проверьте корректность."
@@ -978,12 +997,21 @@ def _find_title_line_index(page: PageText, filename_title: str | None) -> int | 
             best_block_index = index
 
     if best_block_index is not None and best_block_matches >= block_required:
+        for index in range(best_block_index, min(len(page.lines), best_block_index + 4)):
+            line = _normalize_for_search(page.lines[index])
+            if sum(token in line for token in tokens) >= 2:
+                return index
         return best_block_index
 
     if best_line_index is not None and best_line_matches >= line_required:
         return best_line_index
 
     return None
+
+
+def _is_contents_page(page: PageText) -> bool:
+    return any(re.fullmatch(r"(?:volume\s+)?contents|table\s+of\s+contents|содержание", line.strip(), re.I)
+               for line in page.lines[:12])
 
 
 def _extract_title_from_page(
@@ -993,6 +1021,13 @@ def _extract_title_from_page(
     filename_title: str | None,
     allow_filename_fallback: bool = True,
 ) -> TitleMatch | None:
+    if _is_contents_page(page):
+        return None
+    if page.layout_title and not _is_bad_extracted_title(page.layout_title):
+        return TitleMatch(
+            page.layout_title, page.number,
+            _find_title_line_index(page, page.layout_title), 15, from_layout=True,
+        )
     if kind == "mdpi":
         mdpi_title = _extract_mdpi_title(page.lines, page.number)
         if mdpi_title is not None:
@@ -1097,6 +1132,9 @@ def _extract_title(
         if title is None:
             continue
 
+        if title.from_layout:
+            return title
+
         if best_match is None or title.score > best_match.score:
             best_match = title
 
@@ -1123,14 +1161,20 @@ def _extract_title(
 
 def _normalize_author_source(value: str) -> str:
     value = value.replace("\u00a0", " ")
+    value = re.sub(r"([A-Z])\.[\-\u0002\u2010\u2011\u2012\u2013]\s*([A-Z])\.", r"\1. \2.", value)
     value = re.sub(r"([A-ZА-ЯЁ])\s+\.", r"\1.", value)
     value = re.sub(r"\b([A-ZА-ЯЁ])\.([A-ZА-ЯЁ])\.", r"\1. \2.", value)
     value = re.sub(r"[¹²³⁴⁵⁶⁷⁸⁹⁰]+", "", value)
-    value = re.sub(r"([a-z])([A-Z])", r"\1 \2", value)
-    value = _repair_spaced_latin_words(value)
+    value = re.sub(
+        r"\b(?:Du|Mc|Mac|De|Van|Von|La|Le)[A-Z][A-Za-z'’\-]+|([a-z])([A-Z])",
+        lambda match: match.group(0) if match.group(1) is None else f"{match.group(1)} {match.group(2)}",
+        value,
+    )
     value = re.sub(r"\d+", ",", value)
-    value = re.sub(r"\b([A-Z][a-zA-Z'’\-]{2,})\s+([a-z])(?=\s*,|$)", r"\1\2", value)
+    value = _repair_spaced_latin_words(value)
+    value = re.sub(r"\b([A-Z][a-zA-Z'’\-]{1,})\s+([a-z])(?=\s*[,;*†‡]|$)", r"\1", value)
     value = value.replace("*", " ").replace("†", " ").replace("‡", " ")
+    value = re.sub(r"\s*[°©‘’]+(?=\s*[,;]|$)", "", value)
     value = value.replace("|", ",")
     value = value.replace("&", ",")
     value = re.sub(r"\band\b", ",", value, flags=re.IGNORECASE)
@@ -1185,14 +1229,6 @@ LATIN_INITIAL_TO_RU = {
 }
 
 
-VISUAL_LATIN_INITIAL_TO_RU = {
-    "A": "А", "B": "В", "C": "С", "D": "Д", "E": "Е", "F": "Ф",
-    "G": "Г", "H": "Н", "I": "И", "J": "Ј", "K": "К", "L": "Л",
-    "M": "М", "N": "Н", "O": "О", "P": "Р", "R": "Р", "S": "С",
-    "T": "Т", "U": "У", "V": "В", "Y": "У", "Z": "З",
-}
-
-
 def _normalize_initial(value: str) -> str:
     value = value.strip(" .")
     if not value:
@@ -1201,46 +1237,6 @@ def _normalize_initial(value: str) -> str:
     initial = value[:1].upper()
     initial = LATIN_INITIAL_TO_RU.get(initial, initial)
     return f"{initial}."
-
-
-def _normalize_visual_initial(value: str) -> str:
-    value = value.strip(" .")
-    if not value:
-        return ""
-
-    initial = value[:1].upper()
-    initial = VISUAL_LATIN_INITIAL_TO_RU.get(initial, initial)
-    return f"{initial}."
-
-
-def _format_latin_initial_author_candidate(raw_name: str) -> str | None:
-    cleaned = _normalize_author_source(raw_name)
-
-    match = re.fullmatch(
-        r"([A-Z])\.\s*([A-Z])\.\s*([A-Z][a-zA-Z'’\-]+)",
-        cleaned,
-    )
-    if match:
-        first_initial, second_initial, last_name = match.groups()
-        formatted_last_name = last_name[:1].upper() + last_name[1:]
-        return (
-            f"{formatted_last_name} "
-            f"{_normalize_visual_initial(first_initial)}{_normalize_visual_initial(second_initial)}"
-        )
-
-    match = re.fullmatch(
-        r"([A-Z][a-zA-Z'’\-]+)\s+([A-Z])\.\s*([A-Z])\.?",
-        cleaned,
-    )
-    if match:
-        last_name, first_initial, second_initial = match.groups()
-        formatted_last_name = last_name[:1].upper() + last_name[1:]
-        return (
-            f"{formatted_last_name} "
-            f"{_normalize_visual_initial(first_initial)}{_normalize_visual_initial(second_initial)}"
-        )
-
-    return None
 
 
 def _format_author_canonical(
@@ -1297,7 +1293,8 @@ AUTHOR_NAME_RE = r"A-Za-z\u0410-\u044F\u0401\u0451'\-\u2019"
 RU_AUTHOR_WORD_RE = r"[\u0410-\u042F\u0401][\u0430-\u044F\u0451-]+"
 
 
-def _format_author_display_name_impl(raw_name: str) -> str | None:
+def format_author_display_name(raw_name: str) -> str | None:
+    """Normalize a PDF byline after filtering title and affiliation text."""
     cleaned = _normalize_author_source(raw_name)
 
     if (
@@ -1306,12 +1303,17 @@ def _format_author_display_name_impl(raw_name: str) -> str | None:
         or AFFILIATION_RE.search(cleaned)
         or AUTHOR_TECHNICAL_RE.search(cleaned)
         or _looks_like_title_or_topic_phrase(cleaned)
+        or re.search(r"\b(?:geodynamic|setting|copyright|publishing|rights|reserved|elsevier|pleiades|all|uncorrected|proof)\b", cleaned, re.I)
     ):
         return None
 
     alias_key = _make_author_alias_key(cleaned)
     if alias_key in AUTHOR_ALIASES:
         return AUTHOR_ALIASES[alias_key]
+
+    canonical = canonical_author_name(cleaned)
+    if canonical:
+        return canonical
 
     match = re.fullmatch(
         rf"({RU_AUTHOR_WORD_RE})\s+({RU_AUTHOR_WORD_RE})(?:\s+({RU_AUTHOR_WORD_RE}|[{AUTHOR_INITIAL_RE}]\.?))?",
@@ -1359,36 +1361,12 @@ def _format_author_display_name_impl(raw_name: str) -> str | None:
     return None
 
 
-def format_author_display_name(raw_name: str) -> str | None:
-    """
-    Приводит автора к виду Иванов А.В.
-
-    Важно: имена не угадываем.
-    Alexei V. Ivanov -> Иванов А.В. только потому, что в строке уже есть A. и V.
-    A. V. Ivanov -> Иванов А.В.
-    Ivanov A. V. -> Иванов А.В.
-    Иванов Алексей Викторович -> Иванов А.В.
-    """
-
-    return _format_author_display_name_impl(raw_name)
-
-
-
 def _map_last_name(value: str) -> str:
     if re.search(r"[А-Яа-яЁё]", value):
         return _title_case_ru(value)
 
     normalized = value.lower()
     return LAST_NAME_MAP.get(normalized, normalized[:1].upper() + normalized[1:])
-
-
-def normalize_author_display_name(raw_name: str) -> str | None:
-    """
-    Совместимая обертка для старого названия функции.
-    Возвращает только формат Фамилия И.О.; полные имена не угадывает.
-    """
-
-    return format_author_display_name(raw_name)
 
 
 def _looks_like_affiliation_author_candidate(text: str, start: int) -> bool:
@@ -1401,6 +1379,8 @@ def _find_author_candidates(text: str) -> list[str]:
 
     patterns = [
         # A. V. Ivanov / А. В. Иванов
+        r"(?:[A-Z]|Yu|Ya|Yo|Zh|Kh|Ch|Sh)\.\s*(?:[A-Z]|Yu|Ya|Yo|Zh|Kh|Ch|Sh)\.\s*[A-Z][a-zA-Z'’\-]+",
+        r"(?:[A-Z]|Yu|Ya|Yo|Zh|Kh|Ch|Sh)\.\s*[A-Z][a-zA-Z'’\-]+",
         r"[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+",
         # Ivanov A. V. / Иванов А. В.
         r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.",
@@ -1417,20 +1397,26 @@ def _find_author_candidates(text: str) -> list[str]:
         ]
     )
 
-    candidates: list[str] = []
+    candidates: list[tuple[int, str]] = []
     for pattern in patterns:
         for match in re.finditer(pattern, text):
             if _looks_like_affiliation_author_candidate(text, match.start()):
                 continue
-            candidates.append(match.group(0))
+            candidates.append((match.start(), match.group(0)))
 
     # Если regex не нашел, пробуем разрезать по разделителям и проверить куски.
-    for part in re.split(r";|,|\n", text):
-        part = _normalize_author_source(part)
+    for part_match in re.finditer(r"[^;,\n]+", text):
+        part = _normalize_author_source(part_match.group(0))
         if _looks_like_author(part):
-            candidates.append(part)
+            candidates.append((part_match.start(), part))
 
-    return candidates
+    selected: list[tuple[int, str]] = []
+    for start, value in sorted(candidates, key=lambda item: (item[0], -len(item[1]))):
+        if any(start >= previous and start + len(value) <= previous + len(name)
+               for previous, name in selected):
+            continue
+        selected.append((start, value))
+    return [value for _, value in selected]
 
 
 def _looks_like_author(value: str) -> bool:
@@ -1459,7 +1445,7 @@ def _looks_like_author(value: str) -> bool:
         re.fullmatch(r"[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+", value)
         or re.fullmatch(r"[A-ZА-ЯЁ][A-Za-zА-Яа-яЁё'’\-]+\s+[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.", value)
         or re.fullmatch(r"[A-Z][a-zA-Z'’\-ÿ]+\s+[A-Z]\.\s*[A-Z][a-zA-Z'’\-]+", value)
-        or re.fullmatch(r"[A-Z][a-zA-Z'’\-ÿ]{2,}\s+[A-Z][a-zA-Z'’\-]{2,}", value)
+        or re.fullmatch(r"[A-Z][a-zA-Z'’\-ÿ]{1,}\s+[A-Z][a-zA-Z'’\-]{1,}", value)
         or re.fullmatch(r"[А-ЯЁ][а-яё-]+\s+[А-ЯЁ][а-яё-]+(?:\s+[А-ЯЁ][а-яё-]+)?", value)
     )
 
@@ -1486,13 +1472,7 @@ def _normalize_author_list(
     seen: set[str] = set()
 
     for candidate in candidates:
-        normalized_author = None
-
-        if preserve_latin_initial_surnames:
-            normalized_author = _format_latin_initial_author_candidate(candidate)
-
-        if normalized_author is None:
-            normalized_author = normalize_author_display_name(candidate)
+        normalized_author = format_author_display_name(candidate)
 
         if not normalized_author:
             continue
@@ -1526,7 +1506,7 @@ def _clean_author_line(line: str) -> str:
     )
 
     # Слово может быть отдельной строкой или стоять перед ФИО.
-    line = re.sub(r"\bакадемик\b", " ", line, flags=re.IGNORECASE)
+    line = re.sub(r"\b(?:академик|academician)\b", " ", line, flags=re.IGNORECASE)
 
     # Убираем надстрочные индексы организаций и служебные маркеры.
     line = re.sub(r"[¹²³⁴⁵⁶⁷⁸⁹⁰]+", " ", line)
@@ -1559,6 +1539,7 @@ def _should_stop_author_block(line: str) -> bool:
         "reply to",
         "поступило",
         "представлено",
+        "presented by",
         "received",
         "accepted",
         "submitted",
@@ -1703,6 +1684,13 @@ def _extract_authors_from_title_zone(
         return []
 
     page = pages[title_match.page_index]
+    if page.author_lines is not None:
+        page = replace(page, lines=page.author_lines, text="\n".join(page.author_lines), author_lines=None)
+        title_match = replace(title_match, line_index=_find_title_line_index(page, title_match.title))
+        if title_match.line_index is None:
+            return []
+    if _is_contents_page(page):
+        return []
     start = title_match.line_index + 1
     section_index = _find_first_section_index(page.lines)
 
@@ -1710,13 +1698,15 @@ def _extract_authors_from_title_zone(
     # Тогда section_index может оказаться меньше start. В таком случае
     # нельзя обрезать блок по section_index.
     if section_index <= start:
-        end = min(len(page.lines), start + 10)
+        end = min(len(page.lines), start + 30)
     else:
-        end = min(section_index, start + 10)
+        end = min(section_index, start + 30)
 
     block: list[str] = []
 
     for line in page.lines[start:end]:
+        if _normalize_for_search(line).strip(" ,.;:") in _normalize_for_search(title_match.title):
+            continue
         if _should_stop_author_block(line):
             break
 
@@ -1733,7 +1723,7 @@ def _extract_authors_from_title_zone(
         if cleaned_line:
             block.append(cleaned_line)
 
-    authors = _extract_authors_from_lines(block)
+    authors = _extract_authors_from_lines(block, max_lines=None)
 
     if len(authors) > 10:
         return []
@@ -1894,9 +1884,9 @@ def _extract_abstract_and_first_paragraphs(text: str, *, limit: int = 8000) -> s
     for line in lines:
         low = line.lower()
 
-        if re.match(r"^(abstract|аннотация)\b", low):
+        if re.match(r"^(?:article\s+info\s+)?(?:abstract|аннотация)\b", low):
             collecting_abstract = True
-            line = re.sub(r"^(abstract|аннотация)\s*[:.—-]?\s*", "", line, flags=re.IGNORECASE)
+            line = re.sub(r"^(?:article\s+info\s+)?(?:abstract|аннотация)\s*[:.—-]?\s*", "", line, flags=re.IGNORECASE)
 
         if collecting_abstract:
             if re.match(r"^(keywords|key\s*words|ключевые\s+слова|introduction|введение|1\.)\b", low):
@@ -2227,7 +2217,7 @@ def _to_nominative_ru_phrase(value: str) -> str:
     if head_index is None:
         return value
 
-    head_word, head_parsed = parsed_words[head_index]
+    _, head_parsed = parsed_words[head_index]
 
     if head_parsed is None:
         return value
@@ -2419,10 +2409,10 @@ def _extract_keywords_from_focused_text(
         title=title,
         language=language,
         limit=10,
-        min_frequency=1,
+        min_frequency=2,
     )
 
-    return _dedupe_phrases([*title_keywords, *focused_keywords])[:10]
+    return _dedupe_phrases([*focused_keywords, *title_keywords])[:8]
 
 
 def _metadata_title_from_filename(original_name: str | None) -> str | None:
@@ -2524,120 +2514,47 @@ def _extract_topics_from_keywords(
 
 
 def _extract_keywords(text: str) -> list[str]:
-    lines = _extract_metadata_lines(text)
+    """Read the author's keyword block without applying name/phrase inference."""
     raw_parts: list[str] = []
     collecting = False
-
-    for line in lines:
-        low = line.lower()
-
+    for line in _extract_metadata_lines(text):
         if not collecting:
-            match = re.search(
-                r"(?:keywords|key\s*words|ключевые\s+слова)\s*(?::|—|-)?\s*(.*)",
-                line,
-                re.IGNORECASE,
-            )
-
-            if match is None:
-                continue
-
-            collecting = True
-            rest = match.group(1).strip()
-
-            if rest:
-                raw_parts.append(rest)
-
+            match = re.search(r"(?:keywords|key\s*words|ключевые\s+слова)\s*(?::|—|-)?\s*(.*)", line, re.I)
+            if match:
+                collecting = True
+                raw_parts.append(match.group(1))
             continue
-
-        if (
-            SECTION_START_RE.search(line)
-            or line.startswith("*")
-            or re.match(
-                r"^(for citation|to cite|recommended by|received|accepted|published|1\.)",
-                low,
-            )
-            or AFFILIATION_RE.search(line)
-        ):
+        if (SECTION_START_RE.search(line) or REFERENCES_RE.search(line)
+            or re.fullmatch(r"\d{1,5}", line) or line.startswith("*")
+            or re.match(r"^(?:for citation|to cite|received|accepted|published|\d+\.)", line, re.I)
+            or AFFILIATION_RE.search(line)):
             break
-
-        # Если пошел обычный длинный абзац, значит блок ключевых слов закончился.
-        if len(line) > 180 and not re.search(r";|,", line):
+        if len(raw_parts) >= 8 or (len(line) > 180 and not re.search(r";|,", line)):
             break
-
         raw_parts.append(line)
-
-    if not raw_parts:
-        return []
-
-    raw_keywords = " ".join(raw_parts)
-    raw_keywords = re.sub(r"\s+", " ", raw_keywords)
-
-    items = re.split(r";|,|•|\|", raw_keywords)
-
-    keywords: list[str] = []
-    seen: set[str] = set()
-
-    for item in items:
-        keyword = _clean_metadata_line(item)
-
-        if len(keyword) < 2:
+    results: list[str] = []
+    for raw in re.split(r";|,|•|\|", " ".join(raw_parts)):
+        keyword = _clean_metadata_line(raw).strip(" .")
+        if not 2 <= len(keyword) <= 100 or len(keyword.split()) > 8:
             continue
-
-        if _is_bad_formatted_phrase(keyword):
+        if not is_readable_text(keyword, strict=True):
             continue
-
-        if SECTION_START_RE.search(keyword) or BAD_TITLE_RE.search(keyword):
+        if (PHRASE_BAD_WORDS_RE.search(keyword) or ORG_OR_JOURNAL_RE.search(keyword)
+            or AUTHOR_TECHNICAL_RE.search(keyword) or SERVICE_LINE_RE.search(keyword)
+            or CAPTION_OR_TABLE_RE.search(keyword)):
             continue
-
-        if len(keyword) > 90:
+        if re.search(r"[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.", keyword):
             continue
-
-        if len(keyword.split()) > 6:
-            continue
-
-        if "." in keyword and not re.search(
-            r"\b[A-ZА-ЯЁ]\.\s*[A-ZА-ЯЁ]\.",
-            keyword,
-        ):
-            continue
-
-        if re.search(r"(19\d{2}|20\d{2})", keyword):
-            continue
-
-        if re.match(r"^\d", keyword):
-            continue
-
-        if re.search(
-            r"refers to|both by|gillespie|batbaatar",
-            keyword,
-            re.IGNORECASE,
-        ):
-            continue
-
-        if _line_looks_like_author_list(keyword):
-            continue
-
-        if re.search(r"[А-ЯЁA-Z]{3,}\s+[А-ЯЁA-Z]{3,}", keyword):
-            continue
-
-        if keyword.lower().startswith(("in ", "both ", "such ", "however ")):
-            continue
-
-        normalized = keyword.lower().replace("ё", "е")
-
-        if "ivanov" in normalized or "иванов" in normalized:
-            continue
-
-        if normalized in seen:
-            continue
-
-        seen.add(normalized)
-
-        # Если ключевое слово русское — тоже приводим к именительному падежу.
-        keyword = _format_phrase(keyword, language=_detect_language(keyword))
-        keywords.append(keyword)
-
-    return keywords[:12]
+        if re.search(r"[А-Яа-яЁё]", keyword):
+            formatted = _format_phrase(keyword, language="ru")
+            for latin in re.findall(r"[A-Za-z][A-Za-z0-9/-]*", keyword):
+                formatted = re.sub(r"(?<![A-Za-z])" + re.escape(latin) + r"(?![A-Za-z])", lambda _: latin, formatted, flags=re.I)
+            keyword = formatted
+        else:
+            keyword = keyword.lower()
+        if keyword.casefold() not in {value.casefold() for value in results}:
+            results.append(keyword)
+    return results[:12]
 
 
 def _merge_unique_values(*groups: list[str], limit: int | None = None) -> list[str]:
@@ -2681,30 +2598,6 @@ def _normalize_ai_authors(authors: list[str]) -> list[str]:
             result.append(normalized)
 
     return _merge_unique_values(result)
-
-
-def _normalize_ai_keywords(
-    keywords: list[str],
-    *,
-    language: str | None,
-) -> list[str]:
-    formatted: list[str] = []
-
-    for keyword in keywords:
-        keyword = _clean_metadata_line(keyword)
-
-        if not keyword:
-            continue
-
-        if len(keyword) > 90 or len(keyword.split()) > 6:
-            continue
-
-        if _is_bad_formatted_phrase(keyword):
-            continue
-
-        formatted.append(_format_phrase(keyword, language=language))
-
-    return _dedupe_phrases(formatted)
 
 
 def _ai_field_confidence(analysis, field_name: str, default: float = 0.0) -> float:
@@ -2763,6 +2656,7 @@ def _merge_ai_publication_analysis(
     if (
         ai_title
         and not _is_bad_extracted_title(ai_title)
+        and _normalize_for_search(ai_title) in _normalize_for_search(full_text)
         and _ai_field_confidence(analysis, "title", default=0.8) >= 0.65
         and (
             not title
@@ -2798,14 +2692,8 @@ def _merge_ai_publication_analysis(
         prefer_ai_threshold=0.75,
     )
 
-    ai_keywords = _normalize_ai_keywords(analysis.keywords, language=language)
-    keywords = _merge_ai_list_if_confident(
-        extracted.keywords,
-        ai_keywords,
-        confidence=_ai_field_confidence(analysis, "keywords", default=0.8),
-        prefer_ai_threshold=0.7,
-        limit=12,
-    )
+    explicit_keywords = _extract_keywords(full_text)
+    keywords = explicit_keywords or extracted.keywords
     keywords = _filter_author_phrases(keywords, authors)
 
     topic_seed_title = title or filename_title
@@ -2827,13 +2715,15 @@ def _merge_ai_publication_analysis(
         title_source=title_source,
         title_confidence=title_confidence,
         title_warning=title_warning,
+        keywords_source="explicit" if explicit_keywords else extracted.keywords_source,
+        authors_source=extracted.authors_source,
     )
 
 
 def _needs_ai_publication_analysis(
     extracted: ExtractedPublicationMetadata,
 ) -> bool:
-    """Use the 7B model only when the lightweight parser needs help."""
+    """Ask the API only when the lightweight parser needs help."""
     title_needs_help = (
         not extracted.title
         or extracted.title_confidence == "low"
@@ -2848,18 +2738,23 @@ def _needs_ai_publication_analysis(
     )
 
 
-def extract_publication_metadata_from_pdf(
-    file_path: Path | str,
-    original_name: str | None = None,
+def _extract_publication_metadata_from_pages(
+    pages: list[PageText],
+    original_filename: str,
 ) -> ExtractedPublicationMetadata:
-    file_path = Path(file_path)
-    original_filename = original_name or file_path.name
+    pages = [
+        replace(page, lines=[
+            re.sub(r"\s+[®@](?:\s.*|[-—–]+.*)$", "", line)
+            if index < 20 else line
+            for index, line in enumerate(page.lines)
+        ]) if page.source == "ocr" else page
+        for page in pages
+    ]
     filename_title = _filename_title_candidate(original_filename)
     filename_title_quality = _filename_title_quality(
         filename_title,
         raw_title=Path(original_filename).stem,
     )
-    pages = _extract_pages(file_path)
 
     full_text = "\n".join(page.text for page in pages)
 
@@ -2898,6 +2793,12 @@ def extract_publication_metadata_from_pdf(
         filename_title=filename_title,
         filename_quality=filename_title_quality,
     )
+    if title_source == "pdf" and title_match is not None and any(
+        page.number == title_match.page_index and page.source == "ocr" for page in pages
+    ):
+        title_source = "ocr"
+        title_confidence = "medium"
+        title_warning = "Название распознано со страницы PDF. Проверьте название и остальные поля перед сохранением."
     language = _detect_language(full_text, filename_title)
 
     authors = _extract_authors(
@@ -2917,17 +2818,19 @@ def extract_publication_metadata_from_pdf(
     if explicit_keywords:
         # Если в PDF есть явный блок "Ключевые слова" / "Keywords", доверяем ему.
         # Не смешиваем его с частотными фразами из текста, чтобы не засорять результат.
-        keywords = _dedupe_phrases(explicit_keywords)[:12]
+        keywords = _merge_unique_values(explicit_keywords)[:12]
     else:
-        # Без явного блока берём только title/filename как источник подсказок.
-        # Полнотекстовый frequent extraction временно отключён: он давал много мусора
-        # из организаций, сборников, сносок, таблиц и соседних статей.
-        keywords = _extract_keywords_from_title_source(
-            keyword_seed_title,
-            language=language,
-        )
+        # Use the abstract when available; never mine bibliography or the
+        # entire article for suggestions. Keep their origin distinct.
+        if re.search(r"(?:^|\n)\s*(?:article\s+info\s+)?(?:abstract|аннотация)\b", full_text, re.IGNORECASE):
+            keywords = _extract_keywords_from_focused_text(full_text, title=keyword_seed_title, language=language)
+        else:
+            keywords = _extract_keywords_from_title_source(keyword_seed_title, language=language)
 
     keywords = _filter_author_phrases(keywords, authors)
+    if not explicit_keywords and language == "en":
+        source_text = _normalize_for_search(full_text + "\n" + (keyword_seed_title or ""))
+        keywords = [keyword for keyword in keywords if _normalize_for_search(keyword) in source_text]
 
     topics = _extract_topics_from_keywords(
         title=keyword_seed_title,
@@ -2948,12 +2851,75 @@ def extract_publication_metadata_from_pdf(
         title_warning=title_warning,
     )
 
-    return _merge_ai_publication_analysis(
-        extracted,
-        full_text=full_text,
-        filename_title=filename_title,
-        original_filename=original_filename,
+    extracted.authors_source = "ocr" if any(page.source == "ocr" for page in pages) else "native"
+    extracted.keywords_source = "explicit" if explicit_keywords else ("suggested" if keywords else "none")
+    return _sanitize_metadata(extracted)
+
+
+def _sanitize_metadata(extracted: ExtractedPublicationMetadata) -> ExtractedPublicationMetadata:
+    """Neither a font mapping nor the AI fallback may populate fields with garbage."""
+    if extracted.title and not is_readable_text(extracted.title, strict=True):
+        extracted.title = None
+        extracted.title_source = "unknown"
+        extracted.title_confidence = "low"
+        extracted.title_warning = "Название не удалось прочитать. Введите его вручную."
+    for field_name in ("authors", "keywords", "topics"):
+        values = getattr(extracted, field_name)
+        setattr(extracted, field_name, [value for value in values if is_readable_text(value, strict=True)])
+    return extracted
+
+
+def _metadata_completeness(extracted: ExtractedPublicationMetadata) -> int:
+    return (
+        3 * bool(extracted.title)
+        + bool(extracted.authors)
+        + (extracted.year is not None)
+        + bool(extracted.doi)
     )
+
+
+def extract_publication_metadata_from_pdf(
+    file_path: Path | str,
+    original_name: str | None = None,
+) -> ExtractedPublicationMetadata:
+    file_path = Path(file_path)
+    original_filename = original_name or file_path.name
+    pages = _extract_pages(file_path)
+    extracted = _extract_publication_metadata_from_pages(pages, original_filename)
+    if pages and all(_is_contents_page(page) for page in pages):
+        extracted.authors = []
+        extracted.title_warning = "Прочитанные страницы содержат оглавление. Проверьте файл статьи и авторов вручную."
+        return extracted
+    if not extracted.title and len(pages) == 3:
+        pages += _extract_pages(file_path, max_pages=15, page_indexes=set(range(3, 15)))
+        extracted = _extract_publication_metadata_from_pages(pages, original_filename)
+
+    # A scan may contain a perfectly readable body but an image-only heading.
+    # Re-read only the first two native pages, once, before asking the API for help.
+    needs_ocr = (
+        not extracted.title or extracted.title_confidence == "low"
+        or not extracted.authors or extracted.year is None
+    )
+    retry_indexes = {page.number for page in pages[:2] if page.source == "native"}
+    if needs_ocr and retry_indexes:
+        try:
+            recovered_pages = _extract_pages(file_path, page_indexes=retry_indexes, force_ocr=True)
+        except OcrUnavailableError as exc:
+            logger.warning("Metadata OCR recovery failed: %s", exc)
+        else:
+            replacements = {page.number: page for page in recovered_pages if page.source == "ocr"}
+            if replacements:
+                candidate_pages = [replacements.get(page.number, page) for page in pages]
+                candidate = _extract_publication_metadata_from_pages(candidate_pages, original_filename)
+                if _metadata_completeness(candidate) >= _metadata_completeness(extracted):
+                    pages, extracted = candidate_pages, candidate
+
+    return _sanitize_metadata(_merge_ai_publication_analysis(
+        extracted,
+        full_text="\n".join(page.text for page in pages),
+        filename_title=_filename_title_candidate(original_filename),
+        original_filename=original_filename,
+    ))
 
 
 def extract_publication_metadata_from_bytes(

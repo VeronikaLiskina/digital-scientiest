@@ -155,8 +155,7 @@ async def test_create_publication_resolves_confirmed_names_only_on_submit(client
     assert response.status_code == 201
 
     data = response.json()
-    assert len(data["authors"]) == 1
-    assert data["authors"][0]["full_name"] == "Иванов И.И."
+    assert {author["full_name"] for author in data["authors"]} == {"Иванов И.И.", "Иванов А.В."}
     assert len(data["topics"]) == 1
     assert data["topics"][0]["name"] == "Искусственный интеллект"
     assert len(data["keywords"]) == 1

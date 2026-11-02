@@ -1,4 +1,5 @@
-FROM python:3.12-slim
+# Keep dependency layers reusable when the upstream tag is republished.
+FROM python:3.12-slim@sha256:e70237b264442328526ff29d6b3c43bd8abcf6cbab78a949322fb69b7d91d6b6
 
 WORKDIR /app
 

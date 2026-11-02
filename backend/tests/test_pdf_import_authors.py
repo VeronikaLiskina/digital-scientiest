@@ -227,4 +227,4 @@ def test_falls_back_to_first_page_when_title_zone_has_no_authors():
         kind="generic_article",
     )
 
-    assert authors == ["Ivanov А.В.", "Petrov С.Д."]
+    assert authors == ["Иванов А.Б.", "Petrov C.D."]

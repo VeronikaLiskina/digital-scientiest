@@ -124,6 +124,23 @@ def test_reranker_uses_normalized_intent_for_geochronology_method_evidence():
     assert scored[0]["reranker_score"] == 0.93
 
 
+def test_age_question_does_not_promote_unrelated_method_descriptions():
+    service = make_service([])
+    calls = []
+
+    def score(pairs):
+        calls.append(pairs)
+        return [0.08, 0.92]
+
+    service._score_pairs = score
+    ranked = service.rerank("Каков возраст Малого Мурунского массива по данным геохронологии?", [
+        {"chunk_id": 1, "text": "Радиоизотопное датирование выполнялось 40Ar/39Ar методом."},
+        {"chunk_id": 2, "text": "Возраст Мурунского массива составляет 137–128 млн лет."},
+    ])
+    assert len(calls) == 1
+    assert [chunk["chunk_id"] for chunk in ranked] == [2]
+
+
 def test_reranker_preserves_exact_mentions_for_source_lookup_intent():
     service = make_service([])
     calls: list[list[tuple[str, str]]] = []

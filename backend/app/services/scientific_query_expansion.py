@@ -119,6 +119,11 @@ def build_geochronology_reranker_query(query_text: str) -> str | None:
     """Normalize broad dating-method wording for passage-level reranking."""
     if not is_geochronology_method_query(query_text):
         return None
+    # A question about an age needs the dated result, not a generic description
+    # of the method. Boosting every dating passage both diluted evidence and
+    # needlessly doubled CPU scoring for such questions.
+    if not re.search(r"\b(?:метод\w*|способ\w*|как|каким\w*|methods?|techniques?|how)\b", query_text, re.I):
+        return None
     # This is an intent paraphrase, not an answer: it deliberately contains no
     # isotope system or instrument name that could bias the retrieved facts.
     return "Какими методами выполнялось радиоизотопное датирование?"

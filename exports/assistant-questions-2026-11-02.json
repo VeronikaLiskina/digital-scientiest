@@ -1,0 +1,2669 @@
+{
+  "prepared_on": "2026-11-02",
+  "status": "prepared_not_run",
+  "purpose": "Questions and manual acceptance criteria, not measured assistant accuracy",
+  "corpus": {
+    "publications": 48,
+    "chunks": 1847,
+    "text_characters": 2356612,
+    "snapshot": "exports\\qa-corpus-2026-11-02.json",
+    "sha256": "bc81e751d40a93f052c8e1a5d0986397927b7ee884b9e8b7632e03998cdd29da"
+  },
+  "coverage": {
+    "content_publications": 48,
+    "cases": 100,
+    "by_category": {
+      "Каталог и названия": 20,
+      "Содержание: по одному вопросу на каждую публикацию": 48,
+      "Сравнение нескольких публикаций": 8,
+      "Уточнения в одном диалоге": 8,
+      "Защита от выдумок и ложных предпосылок": 8,
+      "Свободный разговор": 4,
+      "Сложный поиск внутри большого сборника №55": 4
+    }
+  },
+  "cases": [
+    {
+      "id": "Q001",
+      "category": "Каталог и названия",
+      "question": "Сколько публикаций загружено в систему?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "На дату снимка — 48. Подсчёт записей публикаций, а не файлов, авторов или фрагментов.",
+      "references": []
+    },
+    {
+      "id": "Q002",
+      "category": "Каталог и названия",
+      "question": "Покажи все публикации, которые есть в системе.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Каталог из 48 существующих записей; названия и ссылки соответствуют базе.",
+      "references": []
+    },
+    {
+      "id": "Q003",
+      "category": "Каталог и названия",
+      "question": "Какие публикации есть по магнитизму?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        35,
+        41,
+        55
+      ],
+      "reference_chunk_ids": [],
+      "expected": "Среди результатов есть исследования палеомагнетизма №35 и №41. В сборнике №55 также есть магнитостратиграфия; перечень не ограничивается только этими тремя записями.",
+      "references": []
+    },
+    {
+      "id": "Q004",
+      "category": "Каталог и названия",
+      "question": "Найди публикации по стратиграфии меловых отложений.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904
+      ],
+      "expected": "Найден сборник №55; меловая система не подменяется похожим словом или другой темой.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q005",
+      "category": "Каталог и названия",
+      "question": "Подбери работы о золоте и возрасте золотого оруденения.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1,
+        8,
+        29
+      ],
+      "reference_chunk_ids": [
+        143,
+        2774,
+        3440
+      ],
+      "expected": "Релевантные работы включают датирование руд и морфогеохимию шлихового золота; не приписывать всем работам одну методику.",
+      "references": [
+        {
+          "publication_id": 1,
+          "chunk_id": 143,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 8,
+          "chunk_id": 2774,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 29,
+          "chunk_id": 3440,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q006",
+      "category": "Каталог и названия",
+      "question": "Какие статьи в базе связаны с датированием цирконов?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        2,
+        11,
+        20,
+        32
+      ],
+      "reference_chunk_ids": [
+        194,
+        2939,
+        2559,
+        3264
+      ],
+      "expected": "Найдены разные объекты датирования: терригенные породы, тонштейн, протолит бластомилонитов. Не смешивать возраст циркона и возраст публикации.",
+      "references": [
+        {
+          "publication_id": 2,
+          "chunk_id": 194,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 11,
+          "chunk_id": 2939,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2559,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 32,
+          "chunk_id": 3264,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q007",
+      "category": "Каталог и названия",
+      "question": "Есть ли публикация о геохимии апатита Слюдянского месторождения?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        21
+      ],
+      "reference_chunk_ids": [
+        2406
+      ],
+      "expected": "Найден документ №21, с названием и ссылкой на него.",
+      "references": [
+        {
+          "publication_id": 21,
+          "chunk_id": 2406,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q008",
+      "category": "Каталог и названия",
+      "question": "Покажи материалы о базальтах и базанитах Камчатки.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        9,
+        25,
+        50
+      ],
+      "reference_chunk_ids": [
+        2828,
+        3106,
+        3826
+      ],
+      "expected": "Найдены соответствующие материалы; №50 обозначен как исправление, а не полноценное новое исследование.",
+      "references": [
+        {
+          "publication_id": 9,
+          "chunk_id": 2828,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 25,
+          "chunk_id": 3106,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 50,
+          "chunk_id": 3826,
+          "chunk_index": 0,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q009",
+      "category": "Каталог и названия",
+      "question": "Найди публикации, в которых использовали радиоуглеродное датирование.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        34
+      ],
+      "reference_chunk_ids": [
+        3191
+      ],
+      "expected": "Как минимум работа о Жомболокском лавовом поле; метод должен присутствовать в тексте, а не только в списке литературы.",
+      "references": [
+        {
+          "publication_id": 34,
+          "chunk_id": 3191,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q010",
+      "category": "Каталог и названия",
+      "question": "Подбери публикации за 2020–2024 годы.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1,
+        2,
+        8,
+        11,
+        20,
+        22,
+        28,
+        29,
+        34,
+        56
+      ],
+      "reference_chunk_ids": [],
+      "expected": "По году карточки: 10 публикаций, ID: 1, 2, 8, 11, 20, 22, 28, 29, 34, 56. Границы включаются; записи без года исключаются.",
+      "references": []
+    },
+    {
+      "id": "Q011",
+      "category": "Каталог и названия",
+      "question": "Покажи публикации за 2020–2024 годы на английском языке.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1,
+        2,
+        20,
+        22,
+        56
+      ],
+      "reference_chunk_ids": [],
+      "expected": "По метаданным количество: 5, ID: 1, 2, 20, 22, 56. Проверяются оба условия одновременно.",
+      "references": []
+    },
+    {
+      "id": "Q012",
+      "category": "Каталог и названия",
+      "question": "Найди публикации автора Диденко.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        35
+      ],
+      "reference_chunk_ids": [],
+      "expected": "Есть №35; фамилия проверяется в авторах карточки, а не по упоминанию в библиографии.",
+      "references": []
+    },
+    {
+      "id": "Q013",
+      "category": "Каталог и названия",
+      "question": "Покажи публикации автора Демонтеровой с 2018 года.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        16,
+        20,
+        23,
+        28,
+        34,
+        48,
+        51
+      ],
+      "reference_chunk_ids": [],
+      "expected": "По метаданным текущего снимка: ID 16, 20, 23, 28, 34, 48, 51. Одновременно учитываются автор и нижняя граница года.",
+      "references": []
+    },
+    {
+      "id": "Q014",
+      "category": "Каталог и названия",
+      "question": "Подбери публикации по магматизму до 2010 года.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        25,
+        54
+      ],
+      "reference_chunk_ids": [
+        3106,
+        4414
+      ],
+      "expected": "Год строго меньше 2010; среди релевантных материалов есть №25 и №54. Работы 2010 года не подходят.",
+      "references": [
+        {
+          "publication_id": 25,
+          "chunk_id": 3106,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 54,
+          "chunk_id": 4414,
+          "chunk_index": 0,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q015",
+      "category": "Каталог и названия",
+      "question": "У каких публикаций в карточке не указан год?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        38,
+        47
+      ],
+      "reference_chunk_ids": [],
+      "expected": "У №38 и №47 год отсутствует. Не подставлять предположительный год в ответ о состоянии карточек.",
+      "references": []
+    },
+    {
+      "id": "Q016",
+      "category": "Каталог и названия",
+      "question": "Какие загруженные документы являются описаниями полезных моделей к патентам?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        27,
+        49
+      ],
+      "reference_chunk_ids": [
+        3476,
+        3805
+      ],
+      "expected": "По текстам — №27 и №49. Отличать фактический жанр документа от поля publication_type: в карточках жанр может быть указан неточно.",
+      "references": [
+        {
+          "publication_id": 27,
+          "chunk_id": 3476,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 49,
+          "chunk_id": 3805,
+          "chunk_index": 0,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q017",
+      "category": "Каталог и названия",
+      "question": "Есть ли в базе сборник «Меловая система России и ближнего зарубежья»?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904
+      ],
+      "expected": "Есть №55, сборник научных трудов под редакцией Е.М. Первушова, 2007 год. Не выдавать его за одну авторскую статью.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q018",
+      "category": "Каталог и названия",
+      "question": "МЕЛОВАЯ СИСТЕМА РОССИИ",
+      "mode": "auto",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904
+      ],
+      "expected": "Настоящая карточка №55, полное название и ссылка. Никакого объяснения про «мелкую систему».",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q019",
+      "category": "Каталог и названия",
+      "question": "Geochronology of Ultramafic Lamprophyre Dikes",
+      "mode": "auto",
+      "history": [],
+      "reference_publications": [
+        33
+      ],
+      "reference_chunk_ids": [
+        3229
+      ],
+      "expected": "По части английского названия найден документ №33.",
+      "references": [
+        {
+          "publication_id": 33,
+          "chunk_id": 3229,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q020",
+      "category": "Каталог и названия",
+      "question": "Устройство для возбуждения сейсмических колебаний",
+      "mode": "auto",
+      "history": [],
+      "reference_publications": [
+        27
+      ],
+      "reference_chunk_ids": [
+        3476,
+        3477
+      ],
+      "expected": "По точному названию найден документ №27; ответ относится к устройству из базы.",
+      "references": [
+        {
+          "publication_id": 27,
+          "chunk_id": 3476,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 27,
+          "chunk_id": 3477,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q021",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какой возраст золотых руд Юбилейного, Ирокинды и Урях получен датированием серицита в пирите?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1
+      ],
+      "reference_chunk_ids": [
+        143
+      ],
+      "expected": "Соответственно 265 ± 33, 276 ± 13 и 287 ± 7 млн лет. Не путать месторождения и погрешности.",
+      "references": [
+        {
+          "publication_id": 1,
+          "chunk_id": 143,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q022",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие ограничения на начало осадконакопления и длительность активности Уджинского палеорифта получены по детритовым цирконам?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        2
+      ],
+      "reference_chunk_ids": [
+        193,
+        194
+      ],
+      "expected": "Накопление началось позже примерно 1459 млн лет назад; длительность рифтования — не более 73 млн лет. Сохранить направленность возрастного ограничения.",
+      "references": [
+        {
+          "publication_id": 2,
+          "chunk_id": 193,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 2,
+          "chunk_id": 194,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q023",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какой диапазон K–Ar возрастов получен для долеритов юго-запада Сибирского кратона и как авторы интерпретируют более молодые значения?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        6
+      ],
+      "reference_chunk_ids": [
+        2756,
+        2757,
+        2758,
+        2759
+      ],
+      "expected": "Семь образцов, 1941 ± 42 — 3213 ± 110 млн лет; молодые значения связывают с полным или частичным метаморфическим переоткрытием около 1,9 млрд лет. Древнейшая оценка предварительная, не безусловно точный возраст извержения.",
+      "references": [
+        {
+          "publication_id": 6,
+          "chunk_id": 2756,
+          "chunk_index": 3,
+          "page_number": 2
+        },
+        {
+          "publication_id": 6,
+          "chunk_id": 2757,
+          "chunk_index": 4,
+          "page_number": 2
+        },
+        {
+          "publication_id": 6,
+          "chunk_id": 2758,
+          "chunk_index": 5,
+          "page_number": 3
+        },
+        {
+          "publication_id": 6,
+          "chunk_id": 2759,
+          "chunk_index": 6,
+          "page_number": 3
+        }
+      ]
+    },
+    {
+      "id": "Q024",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как различается содержание углерода в углеродистых динамосланцах Хулуртуйского блока и породах иликтинской свиты?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        7
+      ],
+      "reference_chunk_ids": [
+        2770,
+        2771
+      ],
+      "expected": "В динамосланцах — 10–16 мас. %, в породах иликтинской свиты — менее 3 мас. %. Указать, что это сравнение из данной работы.",
+      "references": [
+        {
+          "publication_id": 7,
+          "chunk_id": 2770,
+          "chunk_index": 5,
+          "page_number": 3
+        },
+        {
+          "publication_id": 7,
+          "chunk_id": 2771,
+          "chunk_index": 6,
+          "page_number": 3
+        }
+      ]
+    },
+    {
+      "id": "Q025",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Сколько типов шлихового золота выделено на юге Сибирской платформы и какие золотоносные площади рассмотрены?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        8
+      ],
+      "reference_chunk_ids": [
+        2774,
+        2776
+      ],
+      "expected": "Четыре типа; Усть-Илимская, Черноречинская и Бураевская площади. Основа выделения — морфогеохимические исследования, в том числе электронная микроскопия.",
+      "references": [
+        {
+          "publication_id": 8,
+          "chunk_id": 2774,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 8,
+          "chunk_id": 2776,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q026",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Сколько образцов базальтов Камчатки исследовали на первом этапе изучения элементов платиновой группы и какого они типа?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        9
+      ],
+      "reference_chunk_ids": [
+        2828,
+        2832
+      ],
+      "expected": "Шесть образцов плиоцен-четвертичных базальтов низкокалиевого и умеренно калиевого типов; не шесть месторождений платиновых руд.",
+      "references": [
+        {
+          "publication_id": 9,
+          "chunk_id": 2828,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 9,
+          "chunk_id": 2832,
+          "chunk_index": 4,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q027",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Что авторы работы «Megafloods of Northern Asia» называют мегапаводком и какие механизмы его возникновения приводят?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        10
+      ],
+      "reference_chunk_ids": [
+        2844
+      ],
+      "expected": "Катастрофический высокоэнергетический выброс больших объёмов воды из природного или искусственного резервуара; разрушение плотины либо быстрое поступление большого количества пород или льда в водоём.",
+      "references": [
+        {
+          "publication_id": 10,
+          "chunk_id": 2844,
+          "chunk_index": 2,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q028",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Каким интервалом ограничено накопление иликтинской свиты и какие источники детритового материала предложены?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        11
+      ],
+      "reference_chunk_ids": [
+        2939,
+        2940
+      ],
+      "expected": "1,91–1,95 млрд лет; преимущественно породы Акитканского орогена с некоторым вкладом Алданского супертеррейна. Не заменить возраст накопления возрастом поздней переработки.",
+      "references": [
+        {
+          "publication_id": 11,
+          "chunk_id": 2939,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 11,
+          "chunk_id": 2940,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q029",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие явления сопровождали полёт Витимского метеороида и нашли ли экспедиции его кратер или фрагменты?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        12
+      ],
+      "reference_chunk_ids": [
+        1316,
+        1317,
+        1318
+      ],
+      "expected": "Световые, акустические эффекты и воздушная волна; в описанных экспедициях 2002–2003 годов кратеры и фрагменты не найдены. Отдельно отмечены повреждения леса.",
+      "references": [
+        {
+          "publication_id": 12,
+          "chunk_id": 1316,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 12,
+          "chunk_id": 1317,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 12,
+          "chunk_id": 1318,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q030",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как связаны растяжение коры и глубина формирования первичных базальтовых магм в Байкальском рифте?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        13
+      ],
+      "reference_chunk_ids": [
+        2738,
+        2739
+      ],
+      "expected": "Обратная корреляция: чем сильнее растяжение, тем меньше глубина формирования. Не переворачивать зависимость.",
+      "references": [
+        {
+          "publication_id": 13,
+          "chunk_id": 2738,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 13,
+          "chunk_id": 2739,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q031",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие две новые U–Pb SHRIMP датировки долеритовых силлов Ангаро-Тасеевской синклинали приведены в работе о позднепермских и раннетриасовых импульсах?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        15
+      ],
+      "reference_chunk_ids": [
+        2685,
+        2686,
+        2687
+      ],
+      "expected": "254,2 ± 2,3 и 249,6 ± 1,5 млн лет. Отличать новые измерения от ранее опубликованной оценки 252,0 ± 0,4 млн лет.",
+      "references": [
+        {
+          "publication_id": 15,
+          "chunk_id": 2685,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 15,
+          "chunk_id": 2686,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 15,
+          "chunk_id": 2687,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q032",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Где отбирали раннекембрийские дайки и силлы для исследования шошонитового магматизма северо-востока Сибирского кратона?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        16
+      ],
+      "reference_chunk_ids": [
+        1332,
+        1333
+      ],
+      "expected": "Чекуровская антиклиналь, вдоль Нелегера, правого притока Лены; полевая кампания 2017 года. В файле есть и соседний материал о Жидойском массиве: не переносить его объект на это исследование.",
+      "references": [
+        {
+          "publication_id": 16,
+          "chunk_id": 1332,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 16,
+          "chunk_id": 1333,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q033",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие две генетически различные серии ксенолитов с флогопитом и амфиболом исследованы в кимберлитах Куойкского поля?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        17
+      ],
+      "reference_chunk_ids": [
+        2590,
+        2591
+      ],
+      "expected": "Магнезиальная пироксенит-перидотитовая серия и железистая серия флогопит-ильменитовых гипербазитов. Различать метасоматическое и магматическое происхождение.",
+      "references": [
+        {
+          "publication_id": 17,
+          "chunk_id": 2590,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 17,
+          "chunk_id": 2591,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q034",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какой возраст угленакопления Иркутского бассейна получен по цирконам тонштейна Азейского месторождения и каким методом?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        20
+      ],
+      "reference_chunk_ids": [
+        2559,
+        2560,
+        2586
+      ],
+      "expected": "U–Pb LA-ICP-MS, 187,44 +0,45/−1,60 млн лет, плинсбах; допустимо округление около 187 млн лет с сохранением периода и метода.",
+      "references": [
+        {
+          "publication_id": 20,
+          "chunk_id": 2559,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2560,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2586,
+          "chunk_index": 28,
+          "page_number": 10
+        }
+      ]
+    },
+    {
+      "id": "Q035",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Сколько образцов апатита Слюдянского месторождения изучили и какие аналитические и статистические методы применили?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        21
+      ],
+      "reference_chunk_ids": [
+        2406,
+        2407
+      ],
+      "expected": "80 образцов; TXRF и ICP-MS; PCA и k-means. Не путать приборные методы измерения со статистическими методами обработки.",
+      "references": [
+        {
+          "publication_id": 21,
+          "chunk_id": 2406,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 21,
+          "chunk_id": 2407,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q036",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Зачем в исследовании «Correlating 300 Million Years of Catastrophes» введена метрика conformity?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        22
+      ],
+      "reference_chunk_ids": [
+        3125
+      ],
+      "expected": "Чтобы учитывать вероятность случайного совпадения возрастов и избежать вводящего в заблуждение сопоставления заранее выбранных дат. Корреляция не объявляется доказательством единственной причины.",
+      "references": [
+        {
+          "publication_id": 22,
+          "chunk_id": 3125,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q037",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Почему для оценки исходных содержаний PGE и Au в мафических расплавах выбрали безрудные силлы Ангаро-Тасеевской синклинали и сколько проб собрали?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        23
+      ],
+      "reference_chunk_ids": [
+        3118,
+        3119
+      ],
+      "expected": "17 проб; геохимическое и Sr–Nd изотопное сходство с низкотитанистыми базальтами Норильско-Талнахского района. Работа выполняет первый шаг расчёта баланса металлов, не весь баланс.",
+      "references": [
+        {
+          "publication_id": 23,
+          "chunk_id": 3118,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 23,
+          "chunk_id": 3119,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q038",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие три основных этапа фанерозойского базитового магматизма выделены на южном фланге Сибирского кратона?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        24
+      ],
+      "reference_chunk_ids": [
+        3061,
+        3062,
+        3063
+      ],
+      "expected": "Около 500 млн лет, около 275 млн лет и 240–250 млн лет. Около 290 млн лет относится к сопоставляемым вулканитам Забайкалья, а не заменяет дату даек 275 млн лет.",
+      "references": [
+        {
+          "publication_id": 24,
+          "chunk_id": 3061,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 24,
+          "chunk_id": 3062,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 24,
+          "chunk_id": 3063,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q039",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Почему базаниты горы Хухч считаются свидетельством внутриплитного K–Na-щелочного магматизма Западной Камчатки и как оценён их возраст?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        25
+      ],
+      "reference_chunk_ids": [
+        3106,
+        3107
+      ],
+      "expected": "Небольшое субвулканическое тело в тылу островной дуги; минералого-геохимические признаки внутриплитных магм. Возраст оценён как средне-позднемиоценовый по положению и датам ассоциирующих пород 17–8 млн лет, не как прямая точная дата всех базанитов.",
+      "references": [
+        {
+          "publication_id": 25,
+          "chunk_id": 3106,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 25,
+          "chunk_id": 3107,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q040",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Чем отличаются отношения базитов и кимберлитов в трубках Мир и Нюрбинская на плече Вилюйского рифта?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        26
+      ],
+      "reference_chunk_ids": [
+        3153,
+        3154
+      ],
+      "expected": "В трубке Мир кимберлиты прорывают силл и дайку долеритов; кимберлиты Нюрбинской, наоборот, прорваны более поздней долерит-монцонит-порфировой дайкой. Не сводить к единой последовательности для обоих объектов.",
+      "references": [
+        {
+          "publication_id": 26,
+          "chunk_id": 3153,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 26,
+          "chunk_id": 3154,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q041",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие дополнительные элементы введены в запатентованное устройство для возбуждения сейсмических колебаний?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        27
+      ],
+      "reference_chunk_ids": [
+        3477
+      ],
+      "expected": "Не менее двух шарнирных держателей с фиксаторами, телескопические системы трубок, звукопоглощающая накладка на торце возбудителя. Ссылка на формулу полезной модели.",
+      "references": [
+        {
+          "publication_id": 27,
+          "chunk_id": 3477,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q042",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какое значение для аналитической базы ИЗК СО РАН имела закупка Finnigan MAT262 в 1999 году и для чего нужны чистые комнаты?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        28
+      ],
+      "reference_chunk_ids": [
+        3449,
+        3450
+      ],
+      "expected": "Закупка обозначена как переломный момент обновления оборудования; блок чистых комнат класса 1000 создан примерно десять лет спустя для пробоподготовки высокоточных изотопных анализов. Не относить их создание к 1999 году.",
+      "references": [
+        {
+          "publication_id": 28,
+          "chunk_id": 3449,
+          "chunk_index": 5,
+          "page_number": 2
+        },
+        {
+          "publication_id": 28,
+          "chunk_id": 3450,
+          "chunk_index": 6,
+          "page_number": 3
+        }
+      ]
+    },
+    {
+      "id": "Q043",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Почему для датирования руд Северного Забайкалья использовали серицит, заключённый в пирите, а не сам пирит?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        29
+      ],
+      "reference_chunk_ids": [
+        3440,
+        3441
+      ],
+      "expected": "Пирит не содержит калия и служит контейнером для калийсодержащего серицита. Датируются включения слюды, что также помогает разделять поколения руд.",
+      "references": [
+        {
+          "publication_id": 29,
+          "chunk_id": 3440,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 29,
+          "chunk_id": 3441,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q044",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Почему авторы работы о зиминском комплексе считают некоторые прежние K–Ar датировки завышенными или ненадёжными?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        30
+      ],
+      "reference_chunk_ids": [
+        3429,
+        3430
+      ],
+      "expected": "Избыточный аргон, в том числе в канкрините; вероятность избытка аргона в амфиболах и слюдах. Отдельно обсуждается несоответствие некоторых Rb–Sr данных изохронной модели; не смешивать причины для двух методов.",
+      "references": [
+        {
+          "publication_id": 30,
+          "chunk_id": 3429,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 30,
+          "chunk_id": 3430,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q045",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какими глубинами ограничены однозначные петрологические свидетельства поступления глубинного вещества на поверхность в обзоре «Deep-level geodynamics»?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        31
+      ],
+      "reference_chunk_ids": [
+        3369,
+        3371
+      ],
+      "expected": "Верхние горизонты нижней мантии, примерно 650–700 км. Более глубокое участие не исключено, но однозначно не доказано; это вывод авторского обзора.",
+      "references": [
+        {
+          "publication_id": 31,
+          "chunk_id": 3369,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 31,
+          "chunk_id": 3371,
+          "chunk_index": 3,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q046",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Когда сформировался Икатский надвиг и какой минерал использовали для 40Ar/39Ar датирования?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        32
+      ],
+      "reference_chunk_ids": [
+        3264
+      ],
+      "expected": "282 ± 0,4 млн лет, метаморфогенный биотит из бластомилонитов. Не путать с U–Pb ограничением возраста протолита 750–800 млн лет.",
+      "references": [
+        {
+          "publication_id": 32,
+          "chunk_id": 3264,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q047",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как различаются возрасты внедрения ультраосновных лампрофировых даек Томтора и последующей перекристаллизации?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        33
+      ],
+      "reference_chunk_ids": [
+        3229
+      ],
+      "expected": "40Ar/39Ar возраст внедрения около 710 млн лет; U–Pb по кальциту — низкотемпературная перекристаллизация около 400 млн лет. Разные события и разные методы.",
+      "references": [
+        {
+          "publication_id": 33,
+          "chunk_id": 3229,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q048",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Совпадают ли интервалы последнего извержения Жомболокского лавового поля в аннотации и заключении статьи об Эргунэ-Кун?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        34
+      ],
+      "reference_chunk_ids": [
+        3191,
+        3194,
+        3226
+      ],
+      "expected": "В аннотациях — 682–792 годы н. э., в заключении — 682–778 годы. Отметить расхождение в источнике, не скрывать его и не выдумывать собственное объяснение.",
+      "references": [
+        {
+          "publication_id": 34,
+          "chunk_id": 3191,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 34,
+          "chunk_id": 3194,
+          "chunk_index": 4,
+          "page_number": 2
+        },
+        {
+          "publication_id": 34,
+          "chunk_id": 3226,
+          "chunk_index": 36,
+          "page_number": 14
+        }
+      ]
+    },
+    {
+      "id": "Q049",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Каков U–Pb возраст постколлизионных А-гранитоидов Южно-Сибирского пояса, рассматриваемых в работе о палеомагнетизме Шарыжалгайского выступа?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        35
+      ],
+      "reference_chunk_ids": [
+        3500,
+        3501
+      ],
+      "expected": "Интервал 1,87–1,84 млрд лет по цирконам. Не выдавать возраст за дату публикации 2003 года или возраст каждого отдельного измерения намагниченности.",
+      "references": [
+        {
+          "publication_id": 35,
+          "chunk_id": 3500,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 35,
+          "chunk_id": 3501,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q050",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какой возраст и состав нового карбонатитового комплекса Западного Прибайкалья приведены в выводах исследования?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        36
+      ],
+      "reference_chunk_ids": [
+        3579,
+        3580
+      ],
+      "expected": "Около 1 млрд лет; кальцитовые и доломит-анкеритовые карбонатиты, силикокарбонатиты, метапикриты и фоскориты. Указать калиевый тип щелочности.",
+      "references": [
+        {
+          "publication_id": 36,
+          "chunk_id": 3579,
+          "chunk_index": 61,
+          "page_number": 30
+        },
+        {
+          "publication_id": 36,
+          "chunk_id": 3580,
+          "chunk_index": 62,
+          "page_number": 31
+        }
+      ]
+    },
+    {
+      "id": "Q051",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Где организована выставка «Живое вещество в геосферах» и как она связана с В.И. Вернадским?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        38
+      ],
+      "reference_chunk_ids": [
+        3582,
+        3584
+      ],
+      "expected": "В МГУ: Музей землеведения и Университетская гимназия; к 160-летию Вернадского. Не выдумывать год, если вопрос касается именно пустого поля года в карточке.",
+      "references": [
+        {
+          "publication_id": 38,
+          "chunk_id": 3582,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 38,
+          "chunk_id": 3584,
+          "chunk_index": 3,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q052",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие методы использовали совместно для изучения включений в сульфидных обособлениях базальтов ивакинской свиты?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        39
+      ],
+      "reference_chunk_ids": [
+        3609,
+        3610,
+        3614
+      ],
+      "expected": "Рамановская спектроскопия и растровая электронная микроскопия с энергодисперсионным анализом. Объект — включения в сульфидных обособлениях под Норильском-1.",
+      "references": [
+        {
+          "publication_id": 39,
+          "chunk_id": 3609,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 39,
+          "chunk_id": 3610,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 39,
+          "chunk_id": 3614,
+          "chunk_index": 6,
+          "page_number": 3
+        }
+      ]
+    },
+    {
+      "id": "Q053",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Что авторы отмечают о распространении аномалии DUPAL в позднекайнозойских базальтах Тувино-Монгольского массива?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        40
+      ],
+      "reference_chunk_ids": [
+        3617
+      ],
+      "expected": "Подтверждают её наличие, но подчёркивают дискретность; не утверждать непрерывную одинаковую аномалию по всему Азиатскому домену. Изотопные обозначения в распознанном тексте местами повреждены.",
+      "references": [
+        {
+          "publication_id": 40,
+          "chunk_id": 3617,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q054",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие три кратких интенсивных магматических события выделены в Ангаро-Тасеевской впадине по палеомагнитным данным?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        41
+      ],
+      "reference_chunk_ids": [
+        3660,
+        3661
+      ],
+      "expected": "Внедрение Толстомысовского силла и извержение капаевских туфов, внедрение Падунского силла, внедрение Тулунского силла. Не объявлять все три синхронными.",
+      "references": [
+        {
+          "publication_id": 41,
+          "chunk_id": 3660,
+          "chunk_index": 31,
+          "page_number": 12
+        },
+        {
+          "publication_id": 41,
+          "chunk_id": 3661,
+          "chunk_index": 32,
+          "page_number": 13
+        }
+      ]
+    },
+    {
+      "id": "Q055",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как эклогитизация нижней коры влияет на предпосылки деламинации в приведённой численной модели?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        42
+      ],
+      "reference_chunk_ids": [
+        3685,
+        3686
+      ],
+      "expected": "Новообразованный эклогит примерно на 6% плотнее подстилающего перидотита при принятой границе P = 20 кбар; инверсия плотности создаёт предпосылки деламинации. Это результат модели, не универсально измеренная константа.",
+      "references": [
+        {
+          "publication_id": 42,
+          "chunk_id": 3685,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 42,
+          "chunk_id": 3686,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q056",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие возрастные группы флогопита выделены в ксенолитах Биректинского террейна и с чем они связаны?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        44
+      ],
+      "reference_chunk_ids": [
+        3669,
+        3670
+      ],
+      "expected": "1600–1800 млн лет — первая серия и субдукционный метасоматизм; 870–850 млн лет — Phl–Ilm-гипербазиты и начало распада Родинии; 500–600 млн лет — ксенолиты с субсолидусной гранатизацией.",
+      "references": [
+        {
+          "publication_id": 44,
+          "chunk_id": 3669,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 44,
+          "chunk_id": 3670,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q057",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие три промышленных типа руд Октябрьского месторождения рассмотрены и как различается доля сульфидов?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        45
+      ],
+      "reference_chunk_ids": [
+        3663
+      ],
+      "expected": "Массивные: 85–95%; lenticular-disseminated (в источнике также brecciated/copper-bearing): 30–50%; вкрапленные: от первых процентов до 15–20%. Сохранять связь каждого диапазона со своим типом.",
+      "references": [
+        {
+          "publication_id": 45,
+          "chunk_id": 3663,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q058",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Чем различаются время кристаллизации гранитоидов и время их тектонического выведения в северной части Амуро-Зейской впадины?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        46
+      ],
+      "reference_chunk_ids": [
+        3723,
+        3747
+      ],
+      "expected": "Кристаллизация около 191 млн лет; выведение и закрытие изотопных систем — 169–155 млн лет. Не смешивать два геологических события.",
+      "references": [
+        {
+          "publication_id": 46,
+          "chunk_id": 3723,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 46,
+          "chunk_id": 3747,
+          "chunk_index": 26,
+          "page_number": 8
+        }
+      ]
+    },
+    {
+      "id": "Q059",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Доказано ли существование природного 271Hs в работе «The Possible Existence of Hs in Nature from a Geochemical Point of View»?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        47
+      ],
+      "reference_chunk_ids": [
+        3756
+      ],
+      "expected": "Нет: рассматривается гипотеза, требующая дополнительного предположения об изобарной паре 271Bh–271Hs и проверки изотопных сдвигов U, Pb, Kr, Xe, Zr. Не заявлять об открытии природного хассия.",
+      "references": [
+        {
+          "publication_id": 47,
+          "chunk_id": 3756,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q060",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Каков возраст Малого Мурунского массива по 40Ar/39Ar данным и какие редкие минералы упомянуты в аннотации?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        48
+      ],
+      "reference_chunk_ids": [
+        3762
+      ],
+      "expected": "Около 137–128 млн лет, ранний мел; чароит и дианит. Дианит в тексте — торговое название стронциевого калиевого рихтерита.",
+      "references": [
+        {
+          "publication_id": 48,
+          "chunk_id": 3762,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q061",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как устроена имитируемая земная поверхность в модели оползневых, эрозионных и абразионных процессов и какой минимальный уклон задан?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        49
+      ],
+      "reference_chunk_ids": [
+        3806,
+        3807
+      ],
+      "expected": "Водоупорный и водопроницаемый слои, U-образный рельеф с водоёмом в конце, уклон не менее 15°. Предусмотрены дождевое устройство и подача воздуха.",
+      "references": [
+        {
+          "publication_id": 49,
+          "chunk_id": 3806,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 49,
+          "chunk_id": 3807,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q062",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Что именно исправлено в erratum к статье о неогеновых базанитах Западной Камчатки?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        50
+      ],
+      "reference_chunk_ids": [
+        3826
+      ],
+      "expected": "Подписи позиций 7 и 8 рисунка 5 на странице 498; также добавлена информация о поддержке РФФИ 07-05-00959. Не придумывать новые анализы или датировки.",
+      "references": [
+        {
+          "publication_id": 50,
+          "chunk_id": 3826,
+          "chunk_index": 0,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q063",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие 40Ar/39Ar возрасты получены для трёх крупных даек роя Нандурбар–Дхуле и какова минимальная длительность его внедрения?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        51
+      ],
+      "reference_chunk_ids": [
+        3830,
+        3831
+      ],
+      "expected": "67,06 ± 0,60; 67,49 ± 0,89; 63,43 ± 0,48 млн лет; не менее 2,5 млн лет. Не переупорядочивать числа так, будто это последовательность отборов, которой в вопросе нет.",
+      "references": [
+        {
+          "publication_id": 51,
+          "chunk_id": 3830,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 51,
+          "chunk_id": 3831,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q064",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие две возрастные группы лав выделены в районе реки Уды и какие изотопные системы исследовали?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        52
+      ],
+      "reference_chunk_ids": [
+        3843,
+        3844
+      ],
+      "expected": "Около 8 и 4 млн лет по K–Ar; Sr–Nd изотопы наряду с главными и примесными элементами. Различать датирующий метод и изотопные данные об источнике магмы.",
+      "references": [
+        {
+          "publication_id": 52,
+          "chunk_id": 3843,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 52,
+          "chunk_id": 3844,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q065",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как в статье о кайнозойских верхнемантийных плюмах Восточной Сибири и Центральной Монголии объясняется роль субдуцирующей Тихоокеанской плиты?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        53
+      ],
+      "reference_chunk_ids": [
+        3853,
+        3854
+      ],
+      "expected": "По предлагаемой модели обогащённый перидотит формируется над слэбом, разогревается, отделяется при погружении слэба и вовлекается в астеносферную конвекцию; её восходящие струи образуют плюмы. Представить как модель авторов.",
+      "references": [
+        {
+          "publication_id": 53,
+          "chunk_id": 3853,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 53,
+          "chunk_id": 3854,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q066",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Как новые датировки изменили оценку начала вулканизма в Западном рифте Восточной Африки?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        54
+      ],
+      "reference_chunk_ids": [
+        4414,
+        4415
+      ],
+      "expected": "Вместо ограничения последними 12,6 млн лет выявлен более ранний этап 19–17 млн лет назад; не путать возраст пород с годом публикации 2001.",
+      "references": [
+        {
+          "publication_id": 54,
+          "chunk_id": 4414,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 54,
+          "chunk_id": 4415,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q067",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Что представляет собой издание «Меловая система России и ближнего зарубежья», кто его редактор и когда создана Меловая комиссия?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904,
+        3905,
+        3906
+      ],
+      "expected": "Сборник трудов 2007 года под редакцией Е.М. Первушова; комиссия организована 18 декабря 1957 года. Не смешивать год издания с датой создания комиссии.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        },
+        {
+          "publication_id": 55,
+          "chunk_id": 3905,
+          "chunk_index": 1,
+          "page_number": 4
+        },
+        {
+          "publication_id": 55,
+          "chunk_id": 3906,
+          "chunk_index": 2,
+          "page_number": 4
+        }
+      ]
+    },
+    {
+      "id": "Q068",
+      "category": "Содержание: по одному вопросу на каждую публикацию",
+      "question": "Какие ограничения интерпретации томографической модели хребта Гаккеля признают авторы ответа критикам и какое Vp/Vs получают на своей диаграмме Вадати?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        56
+      ],
+      "reference_chunk_ids": [
+        4425,
+        4427
+      ],
+      "expected": "Модель нельзя напрямую переводить в петрофизические параметры из-за неопределённости амплитуд; интерпретация качественная. На своей диаграмме получают 1,71, а не критикуемое 1,144.",
+      "references": [
+        {
+          "publication_id": 56,
+          "chunk_id": 4425,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 56,
+          "chunk_id": 4427,
+          "chunk_index": 3,
+          "page_number": 3
+        }
+      ]
+    },
+    {
+      "id": "Q069",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Сопоставь исследования 2021 и 2024 годов о сериците в пирите: зачем выбран этот материал и какие стадии рудообразования выделяются?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1,
+        29
+      ],
+      "reference_chunk_ids": [
+        143,
+        191,
+        3440,
+        3441
+      ],
+      "expected": "Использовать оба текста; сопоставить метод и раннюю вкрапленную/более позднюю жильную минерализацию. Не выдавать разные выборки за полное тождество результатов.",
+      "references": [
+        {
+          "publication_id": 1,
+          "chunk_id": 143,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 1,
+          "chunk_id": 191,
+          "chunk_index": 49,
+          "page_number": 16
+        },
+        {
+          "publication_id": 29,
+          "chunk_id": 3440,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 29,
+          "chunk_id": 3441,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q070",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Сравни датирование цирконов в тонштейне Азейского месторождения и детритовых цирконов Уджинского палеорифта: что именно ограничивает полученный возраст?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        2,
+        20
+      ],
+      "reference_chunk_ids": [
+        194,
+        2559,
+        2560
+      ],
+      "expected": "Тонштейн ограничивает возраст угленакопления; молодые детритовые цирконы дают предельный возраст осадконакопления. Не приравнивать возраст каждого детритового зерна ко времени отложения осадка.",
+      "references": [
+        {
+          "publication_id": 2,
+          "chunk_id": 194,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2559,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2560,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q071",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Чем различаются результаты U–Pb SHRIMP датирования силлов и палеомагнитные аргументы о кратких магматических пиках Ангаро-Тасеевской впадины?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        15,
+        41
+      ],
+      "reference_chunk_ids": [
+        2686,
+        3660,
+        3661
+      ],
+      "expected": "Развести методы, временное разрешение и ограничения; указать противоречивость некоторых датировок Падунского силла, не сглаживать её.",
+      "references": [
+        {
+          "publication_id": 15,
+          "chunk_id": 2686,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 41,
+          "chunk_id": 3660,
+          "chunk_index": 31,
+          "page_number": 12
+        },
+        {
+          "publication_id": 41,
+          "chunk_id": 3661,
+          "chunk_index": 32,
+          "page_number": 13
+        }
+      ]
+    },
+    {
+      "id": "Q072",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Сопоставь состав изученных ксенолитов Биректинского террейна в работах 2015 и 2017 годов и объясни различие магнезиальной и флогопит-ильменитовой серий.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        17,
+        44
+      ],
+      "reference_chunk_ids": [
+        2590,
+        2591,
+        3670
+      ],
+      "expected": "Обе работы и обе серии; метасоматический/магматический генезис и разные возрастные группы. Не складывать исследования в один неразличимый набор образцов.",
+      "references": [
+        {
+          "publication_id": 17,
+          "chunk_id": 2590,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 17,
+          "chunk_id": 2591,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 44,
+          "chunk_id": 3670,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q073",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Сравни, какие ограничения на глубинные процессы дают обзор «Deep-level geodynamics» и модель верхнемантийных плюмов Восточной Сибири.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        31,
+        53
+      ],
+      "reference_chunk_ids": [
+        3369,
+        3371,
+        3853,
+        3854
+      ],
+      "expected": "Разделить пределы прямых свидетельств и предложенную модель слэба и конвекции; не объявлять её доказательством плюмов от границы ядро–мантия.",
+      "references": [
+        {
+          "publication_id": 31,
+          "chunk_id": 3369,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 31,
+          "chunk_id": 3371,
+          "chunk_index": 3,
+          "page_number": 1
+        },
+        {
+          "publication_id": 53,
+          "chunk_id": 3853,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 53,
+          "chunk_id": 3854,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q074",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Чем отличается обсуждение причин катастроф в работе об импульсах сибирских траппов от статистического подхода в «Correlating 300 Million Years of Catastrophes»?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        15,
+        22
+      ],
+      "reference_chunk_ids": [
+        2685,
+        2686,
+        2687,
+        3125
+      ],
+      "expected": "В первой — конкретные импульсы и модель газовыделения; во второй — conformity и возможные случайные совпадения. Сохранять осторожность в причинных выводах.",
+      "references": [
+        {
+          "publication_id": 15,
+          "chunk_id": 2685,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 15,
+          "chunk_id": 2686,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 15,
+          "chunk_id": 2687,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 22,
+          "chunk_id": 3125,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q075",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Сравни задачи анализа PGE и Au в безрудных силлах и анализа рудных минералов Октябрьского месторождения.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        23,
+        45
+      ],
+      "reference_chunk_ids": [
+        3118,
+        3119,
+        3663
+      ],
+      "expected": "Первая работа оценивает исходные концентрации в мафических расплавах; вторая изучает рудные минералы разных типов руд. Не переносить 17 проб силлов на исследование Октябрьского.",
+      "references": [
+        {
+          "publication_id": 23,
+          "chunk_id": 3118,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 23,
+          "chunk_id": 3119,
+          "chunk_index": 2,
+          "page_number": 1
+        },
+        {
+          "publication_id": 45,
+          "chunk_id": 3663,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q076",
+      "category": "Сравнение нескольких публикаций",
+      "question": "Чем различаются принципы работы устройства для возбуждения сейсмических колебаний и модели оползневых, эрозионных и абразионных процессов?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        27,
+        49
+      ],
+      "reference_chunk_ids": [
+        3477,
+        3806,
+        3807
+      ],
+      "expected": "Различить сейсмический возбудитель с платформой и физическую учебную модель с водой, воздухом и двухслойной поверхностью. Это две полезные модели.",
+      "references": [
+        {
+          "publication_id": 27,
+          "chunk_id": 3477,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 49,
+          "chunk_id": 3806,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 49,
+          "chunk_id": 3807,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q077",
+      "category": "Уточнения в одном диалоге",
+      "question": "А только до 2010 года?",
+      "mode": "auto",
+      "history": [
+        "Какие публикации есть по магнитизму?"
+      ],
+      "reference_publications": [
+        35
+      ],
+      "reference_chunk_ids": [],
+      "expected": "Сохранить тему магнитизма и применить год строго меньше 2010; №41 2013 года исключён. Проверить соответствие списка и счётчика.",
+      "references": []
+    },
+    {
+      "id": "Q078",
+      "category": "Уточнения в одном диалоге",
+      "question": "А о чём они?",
+      "mode": "auto",
+      "history": [
+        "Покажи публикации по магнитизму"
+      ],
+      "reference_publications": [
+        35,
+        41
+      ],
+      "reference_chunk_ids": [],
+      "expected": "Описывать найденную подборку, а не весь архив; по одному описанию на соответствующий документ.",
+      "references": []
+    },
+    {
+      "id": "Q079",
+      "category": "Уточнения в одном диалоге",
+      "question": "О чём она?",
+      "mode": "auto",
+      "history": [
+        "МЕЛОВАЯ СИСТЕМА РОССИИ"
+      ],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904
+      ],
+      "expected": "Оставаться в контексте найденного сборника №55 и отвечать по его тексту.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q080",
+      "category": "Уточнения в одном диалоге",
+      "question": "А какие редкие минералы там известны?",
+      "mode": "publications",
+      "history": [
+        "Каков возраст Малого Мурунского массива по данным 40Ar/39Ar геохронологии?"
+      ],
+      "reference_publications": [
+        48
+      ],
+      "reference_chunk_ids": [
+        3762
+      ],
+      "expected": "Сохранить Малый Мурун: чароит и дианит; не переключаться на другое месторождение.",
+      "references": [
+        {
+          "publication_id": 48,
+          "chunk_id": 3762,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q081",
+      "category": "Уточнения в одном диалоге",
+      "question": "Каким методом получили этот возраст?",
+      "mode": "publications",
+      "history": [
+        "Какой возраст угленакопления получен для Азейского месторождения?"
+      ],
+      "reference_publications": [
+        20
+      ],
+      "reference_chunk_ids": [
+        2559,
+        2560
+      ],
+      "expected": "Сохранить Азейское месторождение и цирконы тонштейна: U–Pb LA-ICP-MS.",
+      "references": [
+        {
+          "publication_id": 20,
+          "chunk_id": 2559,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 20,
+          "chunk_id": 2560,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q082",
+      "category": "Уточнения в одном диалоге",
+      "question": "Почему эти два возраста различаются?",
+      "mode": "publications",
+      "history": [
+        "Какие возраста получены при исследовании ультраосновных лампрофировых даек Томтора?"
+      ],
+      "reference_publications": [
+        33
+      ],
+      "reference_chunk_ids": [
+        3229
+      ],
+      "expected": "Развести внедрение даек около 710 млн лет и перекристаллизацию кальцита около 400 млн лет; не называть это ошибкой измерения без источника.",
+      "references": [
+        {
+          "publication_id": 33,
+          "chunk_id": 3229,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q083",
+      "category": "Уточнения в одном диалоге",
+      "question": "МЕЛОВАЯ СИСТЕМА РОССИИ",
+      "mode": "auto",
+      "history": [
+        "Привет, давай поговорим о музыке"
+      ],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3904
+      ],
+      "expected": "После свободной беседы переключиться к настоящей публикации №55, не продолжать фантазийный ответ.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3904,
+          "chunk_index": 0,
+          "page_number": 2
+        }
+      ]
+    },
+    {
+      "id": "Q084",
+      "category": "Уточнения в одном диалоге",
+      "question": "А что известно о Витимском метеороиде?",
+      "mode": "publications",
+      "history": [
+        "Какими методами исследовали апатит Слюдянского месторождения?"
+      ],
+      "reference_publications": [
+        12
+      ],
+      "reference_chunk_ids": [
+        1316,
+        1317,
+        1318
+      ],
+      "expected": "Распознать смену темы с апатита на метеороид; не переносить методы и числа из предыдущего ответа.",
+      "references": [
+        {
+          "publication_id": 12,
+          "chunk_id": 1316,
+          "chunk_index": 0,
+          "page_number": 1
+        },
+        {
+          "publication_id": 12,
+          "chunk_id": 1317,
+          "chunk_index": 1,
+          "page_number": 1
+        },
+        {
+          "publication_id": 12,
+          "chunk_id": 1318,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q085",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Какая урожайность пшеницы в Иркутской области в 2050 году указана в загруженных публикациях?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Сообщить о недостатке подтверждений в найденных материалах; не сочинять численный прогноз и не заменять ответ из архива общими знаниями.",
+      "references": []
+    },
+    {
+      "id": "Q086",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Назови DOI публикации о выставке «Живое вещество в геосферах», если он не найден в тексте или карточке.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        38
+      ],
+      "reference_chunk_ids": [],
+      "expected": "Проверить доступные поля и текст; если DOI не найден, прямо сказать об этом. Не конструировать DOI по шаблону.",
+      "references": []
+    },
+    {
+      "id": "Q087",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "В статье о Витимском метеороиде говорится, что экспедиции нашли кратер. Где он расположен?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        12
+      ],
+      "reference_chunk_ids": [
+        1318
+      ],
+      "expected": "Исправить ложную предпосылку: в описанных экспедициях кратер и фрагменты не обнаружены. Не придумывать координаты кратера.",
+      "references": [
+        {
+          "publication_id": 12,
+          "chunk_id": 1318,
+          "chunk_index": 2,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q088",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Почему авторы датировали сам пирит калий-аргоновым методом?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        29
+      ],
+      "reference_chunk_ids": [
+        3440
+      ],
+      "expected": "Исправить предпосылку: датировали серицит внутри пирита, а не калий в самом пирите.",
+      "references": [
+        {
+          "publication_id": 29,
+          "chunk_id": 3440,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q089",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Подтверди, что работа о 271Hs доказывает открытие природного хассия.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        47
+      ],
+      "reference_chunk_ids": [
+        3756
+      ],
+      "expected": "Не соглашаться: в работе обсуждается гипотеза и требуемые дополнительные предположения и измерения.",
+      "references": [
+        {
+          "publication_id": 47,
+          "chunk_id": 3756,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q090",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Найди статью «МЕЛКАЯ СИСТЕМА РОССИИ» и перескажи её содержание.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Не подменять название «меловая» и не выдумывать содержание. Сообщить, что совпадение не подтверждено, при необходимости уточнить название.",
+      "references": []
+    },
+    {
+      "id": "Q091",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Какой объём добычи золота на Юбилейном за 2025 год указан в статье 2024 года о возрасте руд?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        1
+      ],
+      "reference_chunk_ids": [
+        143
+      ],
+      "expected": "Не выводить объём добычи из возраста руд и не придумывать статистику. Сам по себе год статьи не доказывает отсутствие прогнозов: опираться на найденный текст.",
+      "references": [
+        {
+          "publication_id": 1,
+          "chunk_id": 143,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q092",
+      "category": "Защита от выдумок и ложных предпосылок",
+      "question": "Можно ли по reply о хребте Гаккеля вычислить точную долю расплава в мантии? Назови её.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        56
+      ],
+      "reference_chunk_ids": [
+        4425
+      ],
+      "expected": "Не придумывать процент: авторы подчёркивают невозможность прямого преобразования модели в петрофизические параметры и качественный характер интерпретации.",
+      "references": [
+        {
+          "publication_id": 56,
+          "chunk_id": 4425,
+          "chunk_index": 1,
+          "page_number": 1
+        }
+      ]
+    },
+    {
+      "id": "Q093",
+      "category": "Свободный разговор",
+      "question": "Привет, давай познакомимся. Что ты умеешь?",
+      "mode": "general",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Естественный разговор и описание возможностей; без отказа из-за отсутствия публикаций и без фиктивных ссылок.",
+      "references": []
+    },
+    {
+      "id": "Q094",
+      "category": "Свободный разговор",
+      "question": "Объясни простыми словами разницу между гипотезой и установленным фактом.",
+      "mode": "general",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Понятное объяснение из общих знаний, соответствующая пометка происхождения, без приписывания слов авторам архива.",
+      "references": []
+    },
+    {
+      "id": "Q095",
+      "category": "Свободный разговор",
+      "question": "Помоги составить план подготовки к экзамену на неделю.",
+      "mode": "general",
+      "history": [],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Полезный план; не требовать загрузки геологических публикаций.",
+      "references": []
+    },
+    {
+      "id": "Q096",
+      "category": "Свободный разговор",
+      "question": "Как меня зовут и к какому экзамену я готовлюсь?",
+      "mode": "general",
+      "history": [
+        "Меня зовут Ника, я готовлюсь к экзамену по геологии."
+      ],
+      "reference_publications": [],
+      "reference_chunk_ids": [],
+      "expected": "Сохранить имя Ника и экзамен по геологии из истории; не выдумывать дополнительные сведения.",
+      "references": []
+    },
+    {
+      "id": "Q097",
+      "category": "Сложный поиск внутри большого сборника №55",
+      "question": "Когда была организована Меловая комиссия и какие основные результаты её работы перечислены в сборнике?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        3905,
+        3906
+      ],
+      "expected": "18 декабря 1957 года; уточнение шкалы и границ ярусов, зональные стандарты нижнего и верхнего мела, региональные схемы и публикации. Не пересказывать историю муниципальных органов.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 3905,
+          "chunk_index": 1,
+          "page_number": 4
+        },
+        {
+          "publication_id": 55,
+          "chunk_id": 3906,
+          "chunk_index": 2,
+          "page_number": 4
+        }
+      ]
+    },
+    {
+      "id": "Q098",
+      "category": "Сложный поиск внутри большого сборника №55",
+      "question": "Почему биостратиграфические границы, проводимые по биособытиям, могут быть диахронными? Ответь по сборнику о меловой системе.",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        4044
+      ],
+      "expected": "Обсудить разновременность биособытий и миграцию фаун/береговой линии; не считать формально изохронную ярусную границу тождественной любому её биостратиграфическому признаку.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 4044,
+          "chunk_index": 140,
+          "page_number": 90
+        }
+      ]
+    },
+    {
+      "id": "Q099",
+      "category": "Сложный поиск внутри большого сборника №55",
+      "question": "Какие находки ихтиозавров рода Jasykovia в валанжинских отложениях описаны в сборнике о меловой системе?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        4364
+      ],
+      "expected": "Есть позвонки и фрагменты скелетов, а также фрагмент черепа у Юринг-Хая на Анабаре; не утверждать находку целого скелета там, где описан лишь фрагмент.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 4364,
+          "chunk_index": 460,
+          "page_number": 279
+        }
+      ]
+    },
+    {
+      "id": "Q100",
+      "category": "Сложный поиск внутри большого сборника №55",
+      "question": "Как исследования В.В. Друщица и его учеников с помощью сканирующего электронного микроскопа помогли изучению аммонитов?",
+      "mode": "publications",
+      "history": [],
+      "reference_publications": [
+        55
+      ],
+      "reference_chunk_ids": [
+        4389
+      ],
+      "expected": "Исследования строения и микроструктуры раковин и ранних стадий, уточнение эмбрионального/постэмбрионального развития и родственных связей; отметить характер источника — персональная историческая статья внутри сборника.",
+      "references": [
+        {
+          "publication_id": 55,
+          "chunk_id": 4389,
+          "chunk_index": 485,
+          "page_number": 297
+        }
+      ]
+    }
+  ]
+}

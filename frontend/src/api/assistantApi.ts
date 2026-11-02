@@ -10,6 +10,7 @@ export interface AssistantSource {
 }
 
 export type AnswerOrigin = "internal" | "external" | "catalog";
+export type AssistantMode = "auto" | "publications" | "general";
 
 export interface AssistantAnswerBlock {
   text: string;
@@ -31,15 +32,6 @@ export interface AssistantCatalog {
   returned_count: number;
   truncated: boolean;
   items: AssistantCatalogItem[];
-}
-
-export interface AssistantAskResponse {
-  question: string;
-  answer: string;
-  sources: AssistantSource[];
-  answer_blocks: AssistantAnswerBlock[];
-  answer_origin: AnswerOrigin;
-  catalog: AssistantCatalog | null;
 }
 
 export interface ChatMessage {
@@ -77,9 +69,10 @@ export const assistantApi = {
     rootApiClient.get<ChatDetail>(`/assistant/chats/${chatId}`),
   createChat: () =>
     rootApiClient.post<ChatDetail>("/assistant/chats", {}),
-  sendMessage: (chatId: number, content: string) =>
+  sendMessage: (chatId: number, content: string, mode: AssistantMode = "auto") =>
     rootApiClient.post<ChatReply>(`/assistant/chats/${chatId}/messages`, {
       content,
+      mode,
       limit: 6,
       min_similarity: 0.55,
       detail_percent: 100,

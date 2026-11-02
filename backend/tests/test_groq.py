@@ -1,13 +1,23 @@
 from types import SimpleNamespace
 
 import pytest
+import httpx
+from groq import PermissionDeniedError
 
-from app.services.llm.base import LLMConfigurationError
+from app.api.assistant import _assistant_http_error
+from app.services.llm.base import LLMAccessDeniedError, LLMConfigurationError
+from app.services.llm.base import LLMGenerationError
 from app.services.llm.groq import GroqLLMProvider
 from app.services.local_llm_service import (
     LocalLLMService,
     RAG_ANSWER_JSON_SCHEMA,
 )
+
+
+@pytest.fixture(autouse=True)
+async def prepare_test_database():
+    # Provider contract tests do not use PostgreSQL.
+    yield
 
 
 class CapturingCompletions:
@@ -88,6 +98,19 @@ async def test_groq_provider_plain_completion_has_no_response_format():
     assert "response_format" not in client.completions.requests[0]
 
 
+async def test_groq_never_returns_a_truncated_completion_as_a_finished_answer():
+    client = FakeGroqClient("unused")
+
+    async def truncated(**kwargs):
+        return SimpleNamespace(choices=[SimpleNamespace(
+            message=SimpleNamespace(content='{"blocks":['), finish_reason="length",
+        )])
+
+    client.completions.create = truncated
+    with pytest.raises(LLMGenerationError, match="лимитом длины"):
+        await make_provider(client).generate("question", system_prompt="rules")
+
+
 def test_groq_provider_requires_api_key_without_injected_client():
     with pytest.raises(LLMConfigurationError, match="GROQ_API_KEY"):
         GroqLLMProvider(
@@ -97,3 +120,29 @@ def test_groq_provider_requires_api_key_without_injected_client():
             max_completion_tokens=4096,
             reasoning_effort="medium",
         )
+
+
+async def test_access_denied_logs_status_without_exposing_provider_body(caplog):
+    response = httpx.Response(
+        403, request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"),
+    )
+    private_message = "private request text and secret-key"
+
+    class DeniedCompletions:
+        async def create(self, **kwargs):
+            raise PermissionDeniedError(
+                private_message, response=response,
+                body={"error": {"message": private_message}},
+            )
+
+    client = SimpleNamespace(chat=SimpleNamespace(completions=DeniedCompletions()))
+    with pytest.raises(LLMAccessDeniedError) as error:
+        await make_provider(client).generate("question", system_prompt="rules")
+
+    http_error = _assistant_http_error(error.value)
+    assert http_error.status_code == 503
+    assert http_error.detail["title"] == "Сервис модели отклонил запрос"
+    assert http_error.detail["retryable"] is True
+    assert "provider_status=403" in caplog.text
+    assert private_message not in caplog.text
+    assert private_message not in str(http_error.detail)

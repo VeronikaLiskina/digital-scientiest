@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.core.config import settings
 from app.schemas.ai_publication_analysis import AIPublicationAnalysisResponse
+from app.services.llm.factory import create_http_llm_provider
 from app.services.prompt_builder import build_publication_analysis_prompt
 
 
@@ -217,10 +218,7 @@ def _normalize_payload(data: dict[str, Any]) -> dict[str, Any]:
 
 class AIPublicationAnalysisService:
     def __init__(self) -> None:
-        self.base_url = settings.ollama_base_url.rstrip("/")
-        self.model = settings.ollama_model
         self.timeout = settings.ai_publication_analysis_timeout_seconds
-        self.keep_alive = settings.ollama_keep_alive
 
     def analyze_text(
         self,
@@ -235,7 +233,12 @@ class AIPublicationAnalysisService:
             return None
 
         prompt = build_publication_analysis_prompt(text, filename=filename)
-        raw_response = self._request_ollama(prompt)
+        provider = create_http_llm_provider(timeout_seconds=self.timeout)
+        raw_response = provider.generate_sync(
+            prompt,
+            system_prompt=PUBLICATION_ANALYSIS_SYSTEM_PROMPT,
+            response_format="json",
+        )
         payload = _extract_json_object(raw_response)
 
         if payload is None:
@@ -247,37 +250,6 @@ class AIPublicationAnalysisService:
             )
         except ValidationError:
             return None
-
-    def _request_ollama(self, prompt: str) -> str:
-        url = f"{self.base_url}/api/chat"
-        payload = {
-            "model": self.model,
-            "stream": False,
-            "keep_alive": self.keep_alive,
-            "format": "json",
-            "messages": [
-                {
-                    "role": "system",
-                    "content": PUBLICATION_ANALYSIS_SYSTEM_PROMPT,
-                },
-                {
-                    "role": "user",
-                    "content": prompt,
-                },
-            ],
-            "options": {
-                "temperature": 0,
-                "top_p": 0.8,
-                "repeat_penalty": 1.05,
-            },
-        }
-
-        with httpx.Client(timeout=self.timeout) as client:
-            response = client.post(url, json=payload)
-            response.raise_for_status()
-
-        data = response.json()
-        return str(data.get("message", {}).get("content", ""))
 
 
 def analyze_publication_text(

@@ -1,0 +1,19 @@
+[
+  {"id":"original-title-auto","category":"title","question":"МЕЛОВАЯ СИСТЕМА РОССИИ","origin":"catalog","include_publications":[55],"total":1,"descriptions":true},
+  {"id":"original-title-publications","category":"title","mode":"publications","question":"МЕЛОВАЯ СИСТЕМА РОССИИ","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"original-title-general","category":"title","mode":"general","question":"МЕЛОВАЯ СИСТЕМА РОССИИ","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"lowercase-title","category":"title","question":"меловая система россии","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"quoted-title","category":"title","question":"Покажи статью «Меловая система России»","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"title-description","category":"title","question":"Расскажи о Меловая система России","origin":"catalog","include_publications":[55],"total":1,"descriptions":true},
+  {"id":"another-russian-title","category":"title","question":"ПАЛЕОМАГНЕТИЗМ НИЖНЕПРОТЕРОЗОЙСКИХ ГРАНИТОИДОВ","origin":"catalog","include_publications":[35],"total":1},
+  {"id":"english-title","category":"title","question":"Geochronology of the Malyy (Little) Murun Massif","origin":"catalog","include_publications":[48],"total":1},
+  {"id":"title-followup","category":"title","history":["МЕЛОВАЯ СИСТЕМА РОССИИ"],"question":"О чём она?","origin":"catalog","include_publications":[55],"total":1,"descriptions":true},
+  {"id":"no-silent-word-replacement","category":"title","question":"Найди статью «МЕЛКАЯ СИСТЕМА РОССИИ»","origin":"catalog","total":0,"no_sources":true},
+  {"id":"screenshot-collection-publications","category":"title","mode":"publications","question":"Найди сборник «Меловая система России и ближнего зарубежья»","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"screenshot-collection-auto","category":"title","mode":"auto","question":"Найди сборник «Меловая система России и ближнего зарубежья»","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"screenshot-collection-general","category":"title","mode":"general","question":"Найди сборник «Меловая система России и ближнего зарубежья»","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"polite-collection","category":"title","question":"Можешь найти мне сборник «Меловая система России»?","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"lookup-without-genre","category":"title","question":"Найди «Меловая система России»","origin":"catalog","include_publications":[55],"total":1},
+  {"id":"unknown-collection","category":"title","question":"Найди сборник «Неподтверждённое название сборника»","origin":"catalog","total":0,"no_sources":true},
+  {"id":"collection-singular-followup","category":"title","history":["Найди сборник «Меловая система России»"],"question":"О чём он?","origin":"catalog","include_publications":[55],"total":1,"descriptions":true}
+]

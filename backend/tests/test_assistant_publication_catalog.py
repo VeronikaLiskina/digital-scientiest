@@ -2,6 +2,7 @@ import pytest
 
 from app.api import assistant
 from app.services.publication_query_service import is_publication_catalog_question
+from app.services.publication_query_service import is_publication_count_question, is_publication_catalog_with_descriptions_question
 
 
 def _fail_if_called(*_args, **_kwargs):
@@ -75,6 +76,8 @@ async def test_publication_catalog_questions_return_database_catalog_without_rag
     assert data["sources"] == []
     assert data["answer_origin"] == "catalog"
     assert data["answer_blocks"] == [{"text": data["answer"], "source_ids": []}]
+    for item in data["catalog"]["items"]:
+        item["authors"].sort()
     assert data["catalog"] == {
         "total": 2,
         "returned_count": 2,
@@ -84,7 +87,7 @@ async def test_publication_catalog_questions_return_database_catalog_without_rag
                 "publication_id": 1,
                 "title": "Первая статья",
                 "year": 2024,
-                "authors": ["Иванов И.И."],
+                "authors": ["Иванов А.В.", "Иванов И.И."],
                 "publication_type": "article",
                 "publication_url": "/publications/1",
                 "description": None,
@@ -93,7 +96,7 @@ async def test_publication_catalog_questions_return_database_catalog_without_rag
                 "publication_id": 2,
                 "title": "Документ без метаданных",
                 "year": None,
-                "authors": [],
+                "authors": ["Иванов А.В."],
                 "publication_type": None,
                 "publication_url": "/publications/2",
                 "description": None,
@@ -163,3 +166,15 @@ async def test_publication_catalog_is_saved_in_chat_history(client, monkeypatch)
 )
 def test_topic_specific_publication_request_remains_a_rag_question(question):
     assert not is_publication_catalog_question(question)
+
+
+@pytest.mark.parametrize("question", [
+    "Какие методы описаны в загруженных статьях?",
+    "Какие результаты получены в загруженных публикациях?",
+    "Сколько методов использовано в загруженных статьях?",
+    "Какие выводы описаны в статье «Меловая система России»?",
+])
+def test_content_questions_are_not_mistaken_for_whole_catalog(question):
+    assert not is_publication_catalog_question(question)
+    assert not is_publication_count_question(question)
+    assert not is_publication_catalog_with_descriptions_question(question)

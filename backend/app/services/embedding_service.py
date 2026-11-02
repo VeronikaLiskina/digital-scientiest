@@ -1,4 +1,6 @@
-from threading import BoundedSemaphore
+from collections import OrderedDict
+from concurrent.futures import Future
+from threading import BoundedSemaphore, Lock
 
 import numpy as np
 
@@ -21,6 +23,9 @@ class EmbeddingService:
         self.model_name = self.model_spec.name
         self.batch_size = max(1, batch_size)
         self._encode_slots = BoundedSemaphore(max(1, max_concurrent_jobs))
+        self._query_cache: OrderedDict[str, tuple[float, ...]] = OrderedDict()
+        self._query_cache_lock = Lock()
+        self._query_inflight: dict[str, Future[tuple[float, ...]]] = {}
 
         # PyTorch otherwise tends to occupy every available CPU core. A small,
         # explicit limit keeps PDF automation from making the whole app sluggish.
@@ -195,18 +200,40 @@ class EmbeddingService:
     def embed_query(self, text: str) -> list[float]:
         """Embed a search query using the model's query input contract."""
 
-        return self._embed_texts(
-            [text],
-            input_prefix=self.model_spec.query_prefix,
-        )[0]
-
-    # Backward-compatible document aliases for non-retrieval callers. Search
-    # code intentionally uses ``embed_query`` explicitly.
-    def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        return self.embed_documents(texts)
-
-    def embed_text(self, text: str) -> list[float]:
-        return self.embed_documents([text])[0]
+        # Cache only the calculation, never search results: new publications
+        # must remain visible even when the same question is asked again.
+        # Keep the dictionary lock short: a cached question must not wait for
+        # an unrelated encoding job or PDF indexing to finish. Identical misses
+        # share one Future; distinct queries retain the configured concurrency.
+        with self._query_cache_lock:
+            vector = self._query_cache.get(text)
+            if vector is not None:
+                self._query_cache.move_to_end(text)
+                return list(vector)
+            pending = self._query_inflight.get(text)
+            owner = pending is None
+            if owner:
+                pending = Future()
+                self._query_inflight[text] = pending
+        if not owner:
+            return list(pending.result())
+        try:
+            vector = tuple(self._embed_texts(
+                [text], input_prefix=self.model_spec.query_prefix,
+            )[0])
+        except BaseException as exc:
+            with self._query_cache_lock:
+                self._query_inflight.pop(text)
+            pending.set_exception(exc)
+            raise
+        with self._query_cache_lock:
+            self._query_cache[text] = vector
+            self._query_cache.move_to_end(text)
+            while len(self._query_cache) > 256:
+                self._query_cache.popitem(last=False)
+            self._query_inflight.pop(text)
+        pending.set_result(vector)
+        return list(vector)
 
     def count_tokens(self, text: str) -> int:
         """Count model tokens without truncating the text."""

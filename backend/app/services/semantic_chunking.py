@@ -240,23 +240,6 @@ def split_sources_to_units(
     return units
 
 
-def split_text_to_units(text: str) -> list[str]:
-    """Compatibility helper that exposes the sentence-level hierarchy."""
-
-    class _FallbackCounter:
-        @staticmethod
-        def count_tokens(value: str) -> int:
-            return estimate_token_count(value)
-
-    return [
-        unit.text
-        for unit in split_sources_to_units(
-            [SemanticSource(text=text)],
-            _FallbackCounter(),  # type: ignore[arg-type]
-        )
-    ]
-
-
 def cosine_similarity(a: list[float], b: list[float]) -> float:
     a_array = np.asarray(a, dtype=float)
     b_array = np.asarray(b, dtype=float)

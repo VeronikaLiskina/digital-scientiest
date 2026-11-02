@@ -6,7 +6,6 @@ export const documentChunksApi = {
     const query = publicationId ? `?publication_id=${publicationId}` : "";
     return apiClient.get<DocumentChunk[]>(`/document-chunks${query}`);
   },
-  getOne: (id: number) => apiClient.get<DocumentChunk>(`/document-chunks/${id}`),
   update: (id: number, chunkText: string) =>
     apiClient.patch<DocumentChunk>(`/document-chunks/${id}`, {
       chunk_text: chunkText,

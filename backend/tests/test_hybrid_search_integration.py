@@ -9,6 +9,31 @@ from conftest import TestingSessionLocal
 
 
 @pytest.mark.asyncio
+async def test_document_scope_is_applied_to_both_retrievers_before_ranking():
+    async with TestingSessionLocal() as session:
+        selected = Publication(title="Выбранный документ", status="processed")
+        other = Publication(title="Посторонний документ", status="processed")
+        session.add_all([selected, other])
+        await session.flush()
+        for publication in [selected, other]:
+            session.add(DocumentChunk(
+                publication_id=publication.id, chunk_index=0,
+                chunk_text="Изотопный возраст образца составляет 137 миллионов лет.",
+                embedding=[0.1] * 768, embedding_model="scope-test",
+            ))
+        await session.commit()
+        repository = SemanticSearchRepository(session, publication_ids=(selected.id,))
+        vector = await repository.search_vector_chunks([0.1] * 768, "scope-test")
+        text = await repository.search_full_text_chunks("изотопный возраст")
+        hybrid = await repository.search_chunks([0.1] * 768, "scope-test", query_text="изотопный возраст")
+        for results in [vector, text, hybrid]:
+            assert results
+            assert {r["publication_id"] for r in results} == {selected.id}
+        empty = SemanticSearchRepository(session, publication_ids=())
+        assert await empty.search_chunks([0.1] * 768, "scope-test", query_text="изотопный возраст") == []
+
+
+@pytest.mark.asyncio
 async def test_full_text_search_finds_exact_fe2o3_value():
     async with TestingSessionLocal() as session:
         publication = Publication(

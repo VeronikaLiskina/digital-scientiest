@@ -15,7 +15,7 @@ export type CatalogMatch = {
 
 export type ExtractedPublicationMetadata = {
   title?: string | null;
-  title_source?: "pdf" | "filename" | "unknown" | string;
+  title_source?: "pdf" | "ocr" | "ai" | "filename" | "unknown" | string;
   title_confidence?: "high" | "medium" | "low" | string;
   title_warning?: string | null;
   year?: number | null;
@@ -24,10 +24,12 @@ export type ExtractedPublicationMetadata = {
   doi?: string | null;
   authors: string[];
   keywords: string[];
+  keywords_source?: "explicit" | "suggested" | "none";
   topics: string[];
   matched_author_ids?: number[];
   matched_authors?: CatalogMatch[];
   new_authors?: string[];
+  unverified_authors?: string[];
   matched_topic_ids?: number[];
   matched_topics?: CatalogMatch[];
   new_topics?: string[];
@@ -67,8 +69,6 @@ export const sourceFilesApi = {
       `/source-files/${id}/extract-metadata`,
       {},
     ),
-  update: (id: number, data: Partial<SourceFile>) =>
-    apiClient.patch<SourceFile>(`/source-files/${id}`, data),
   delete: (id: number) => apiClient.delete<void>(`/source-files/${id}`),
   process: (sourceFileId: number) =>
     apiClient.post<StartPdfProcessingResult>(

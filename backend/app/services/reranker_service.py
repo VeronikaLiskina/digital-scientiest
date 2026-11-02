@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import math
-from threading import BoundedSemaphore
+from collections import OrderedDict
+from threading import BoundedSemaphore, Lock
 from typing import Any
 
 from app.services.scientific_query_expansion import (
@@ -44,6 +45,9 @@ class RerankerService:
         self.min_score = min_score
         self.top_k = max(1, top_k)
         self._rerank_slots = BoundedSemaphore(max(1, max_concurrent_jobs))
+        self._score_cache: OrderedDict[tuple[str, str], float] = OrderedDict()
+        self._score_cache_lock = Lock()
+        self._score_cache_size = 256
 
         try:
             import torch
@@ -60,6 +64,28 @@ class RerankerService:
             ) from exc
 
     def _score_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
+        # Cache scores, not search results: new or edited publications still
+        # participate in every search. Exact text keys invalidate edited chunks.
+        if not pairs:
+            return []
+        with self._score_cache_lock:
+            missing = list(dict.fromkeys(pair for pair in pairs if pair not in self._score_cache))
+            values = self._score_uncached_pairs(missing)
+            if len(values) != len(missing) or any(not math.isfinite(value) for value in values):
+                raise RerankerError("Reranker returned invalid scores")
+            computed = dict(zip(missing, values))
+            results = []
+            for pair in pairs:
+                value = computed[pair] if pair in computed else self._score_cache[pair]
+                results.append(value)
+            for pair, value in zip(pairs, results):
+                self._score_cache[pair] = value
+                self._score_cache.move_to_end(pair)
+            while len(self._score_cache) > self._score_cache_size:
+                self._score_cache.popitem(last=False)
+            return results
+
+    def _score_uncached_pairs(self, pairs: list[tuple[str, str]]) -> list[float]:
         if not pairs:
             return []
 

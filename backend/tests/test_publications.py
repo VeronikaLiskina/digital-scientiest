@@ -92,7 +92,8 @@ async def test_create_publication_with_relations(client):
     assert data["status"] == "draft"
     assert data["source_file_id"] == source_file["id"]
 
-    assert len(data["authors"]) == 1
+    assert len(data["authors"]) == 2
+    assert any(item["full_name"] == "Иванов А.В." for item in data["authors"])
     assert data["authors"][0]["id"] == author["id"]
 
     assert len(data["topics"]) == 1
@@ -128,7 +129,8 @@ async def test_get_publication_by_id(client):
 
     assert data["id"] == publication_id
     assert data["title"] == "Тестовая публикация"
-    assert len(data["authors"]) == 1
+    assert len(data["authors"]) == 2
+    assert any(item["full_name"] == "Иванов А.В." for item in data["authors"])
     assert data["authors"][0]["id"] == author["id"]
 
 
@@ -222,7 +224,8 @@ async def test_update_publication(client):
     assert data["year"] == 2026
     assert data["status"] == "published"
 
-    assert len(data["authors"]) == 1
+    assert len(data["authors"]) == 2
+    assert any(item["full_name"] == "Иванов А.В." for item in data["authors"])
     assert data["authors"][0]["id"] == second_author["id"]
 
 

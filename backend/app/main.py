@@ -4,15 +4,16 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.router import api_router
-from app.core.config import settings
 from app.api import assistant, search
 from app.services.pdf_processing_queue import recover_saved_imports_without_chunks
 from app.services.publication_status_service import synchronize_publication_statuses
+from app.services.publication_author_policy import synchronize_required_publication_authors
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await synchronize_publication_statuses()
+    await synchronize_required_publication_authors()
     await recover_saved_imports_without_chunks()
     yield
 

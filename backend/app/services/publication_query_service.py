@@ -14,25 +14,26 @@ DESCRIPTION_MAX_CHARS = 500
 REPRESENTATIVE_CHUNK_SCAN_LIMIT = 3
 DESCRIPTION_UNAVAILABLE = "Описание недоступно: публикация ещё не обработана"
 
-COUNT_MARKERS = (
-    re.compile(r"\bсколько\b"),
-    re.compile(r"\b(?:какое|каков[оа]?)\s+количеств[оа]\b"),
-)
-CATALOG_ACTION_MARKER = re.compile(
-    r"\b(?:какие|покажи(?:те)?|показать|перечисли(?:те)?|перечислить|список|каталог)\b"
-)
 CATALOG_SCOPE_MARKER = re.compile(
     r"\b(?:все|весь|вся|всю|всех|загруж\w*)\b"
 )
 DESCRIPTION_REQUEST_MARKER = re.compile(
     r"\b(?:описан\w*|расскаж\w*|посвящен\w*|о\s+чем|чему)\b"
 )
-DESCRIPTION_CATALOG_ACTION_MARKER = re.compile(
-    r"\b(?:какие|покажи(?:те)?|перечисли(?:те)?|что\s+загруж\w*|расскаж\w*)\b"
-)
 PUBLICATION_MARKER = re.compile(
     r"\b(?:публикаци\w*|стать\w*|статей|документ\w*|материал\w*)\b"
 )
+# Catalog/count intent is about documents themselves, not any sentence that
+# happens to contain "какие", "методы" and "загруженные статьи" together.
+PUBLICATION_OBJECT = (
+    r"(?:(?:все|весь|вся|всю|всех|кажд\w*|загруженн\w*|научн\w*|добавленн\w*)\s+)*"
+    r"(?:публикаци\w*|стать\w*|статей|документ\w*|материал\w*)\b"
+)
+CATALOG_OBJECT_MARKER = re.compile(
+    r"\b(?:какие|покажи(?:те)?|показать|перечисли(?:те)?|перечислить|список|каталог|расскажи(?:те)?\s+(?:о|об))\s+"
+    + PUBLICATION_OBJECT
+)
+COUNT_OBJECT_MARKER = re.compile(r"\b(?:сколько|количеств[оа])\s+" + PUBLICATION_OBJECT)
 SYSTEM_CONTEXT_MARKER = re.compile(
     r"\b(?:"
     r"систем(?:а|е|у|ы|ой|ою|ах|ами)?|"
@@ -74,7 +75,7 @@ def _normalize_question(question: str) -> str:
 def is_publication_count_question(question: str) -> bool:
     normalized = _normalize_question(question)
     return (
-        any(marker.search(normalized) for marker in COUNT_MARKERS)
+        COUNT_OBJECT_MARKER.search(normalized) is not None
         and PUBLICATION_MARKER.search(normalized) is not None
         and (
             SYSTEM_CONTEXT_MARKER.search(normalized) is not None
@@ -86,7 +87,7 @@ def is_publication_count_question(question: str) -> bool:
 def is_publication_catalog_question(question: str) -> bool:
     normalized = _normalize_question(question)
     return (
-        CATALOG_ACTION_MARKER.search(normalized) is not None
+        CATALOG_OBJECT_MARKER.search(normalized) is not None
         and PUBLICATION_MARKER.search(normalized) is not None
         and (
             SYSTEM_CONTEXT_MARKER.search(normalized) is not None
@@ -117,9 +118,10 @@ def is_publication_catalog_with_descriptions_question(
         return True
 
     has_description_action = (
-        DESCRIPTION_CATALOG_ACTION_MARKER.search(normalized) is not None
+        CATALOG_OBJECT_MARKER.search(normalized) is not None
+        or re.match(r"^что\s+загружено\b", normalized) is not None
         or (
-            any(marker.search(normalized) for marker in COUNT_MARKERS)
+            COUNT_OBJECT_MARKER.search(normalized) is not None
             and COUNT_WITH_DESCRIPTION_MARKER.search(normalized) is not None
         )
     )

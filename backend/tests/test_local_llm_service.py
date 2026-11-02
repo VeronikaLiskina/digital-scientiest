@@ -1,17 +1,14 @@
-import httpx
+from types import SimpleNamespace
 import pytest
 
 from app.api import assistant
 from app.schemas.assistant import AssistantAskResponse
-from app.services.llm import ollama as ollama_provider
-from app.services.llm.ollama import OllamaLLMProvider
+from app.services.assistant_generation_service import build_answer_sources
+from app.services.llm.base import LLMGenerationError
 from app.services.local_llm_service import (
     CHINESE_RE,
     GENERAL_KNOWLEDGE_SYSTEM_PROMPT,
     LocalLLMService,
-    OllamaGenerationError,
-    OllamaTimeoutError,
-    OllamaUnavailableError,
     RAG_ANSWER_JSON_SCHEMA,
     RAG_SYSTEM_PROMPT,
     SEARCH_QUERY_JSON_SCHEMA,
@@ -39,7 +36,7 @@ async def prepare_test_database():
 
 class StubLLMService(LocalLLMService):
     def __init__(self, answers: list[str]) -> None:
-        super().__init__()
+        super().__init__(provider=SimpleNamespace(name="stub", model="stub"))
         self.answers = answers
         self.requests: list[tuple[str, str]] = []
         self.response_formats: list[str | dict | None] = []
@@ -91,115 +88,24 @@ def disable_automatic_query_translation(monkeypatch):
     monkeypatch.setattr(assistant, "_translate_search_query", no_translation)
 
 
-class StubHTTPClient:
-    def __init__(self, result) -> None:
-        self.result = result
+@pytest.fixture(autouse=True)
+def prevent_unmocked_general_api(monkeypatch):
+    from app.services import assistant_conversation_service
 
-    async def __aenter__(self):
-        return self
+    def unexpected():
+        raise AssertionError("RAG tests must not call the real general-conversation API")
 
-    async def __aexit__(self, *_args):
+    monkeypatch.setattr(assistant_conversation_service, "LocalLLMService", unexpected)
+
+
+@pytest.fixture(autouse=True)
+def skip_title_resolution_without_database(monkeypatch):
+    from app.services import assistant_catalog_service
+
+    async def no_title(*args, **kwargs):
         return None
 
-    async def post(self, *_args, **_kwargs):
-        if isinstance(self.result, Exception):
-            raise self.result
-        return self.result
-
-
-def make_ollama_provider() -> OllamaLLMProvider:
-    return OllamaLLMProvider(
-        base_url="http://ollama.test",
-        model="qwen2.5:7b",
-        timeout_seconds=120,
-        keep_alive="1m",
-        num_ctx=8192,
-        think=False,
-    )
-
-
-@pytest.mark.parametrize(
-    ("request_error", "expected_error"),
-    [
-        (httpx.ConnectError("offline"), OllamaUnavailableError),
-        (httpx.ReadTimeout("slow"), OllamaTimeoutError),
-    ],
-)
-async def test_ollama_request_maps_connection_failures(
-    monkeypatch,
-    request_error,
-    expected_error,
-):
-    monkeypatch.setattr(
-        ollama_provider.httpx,
-        "AsyncClient",
-        lambda **_kwargs: StubHTTPClient(request_error),
-    )
-
-    with pytest.raises(expected_error):
-        await make_ollama_provider().generate("Вопрос", system_prompt="Правила")
-
-
-@pytest.mark.parametrize(
-    "response",
-    [
-        httpx.Response(
-            500,
-            request=httpx.Request("POST", "http://ollama.test/api/chat"),
-        ),
-        httpx.Response(
-            200,
-            content=b"not-json",
-            request=httpx.Request("POST", "http://ollama.test/api/chat"),
-        ),
-        httpx.Response(
-            200,
-            json={"message": {"content": "   "}},
-            request=httpx.Request("POST", "http://ollama.test/api/chat"),
-        ),
-    ],
-)
-async def test_ollama_request_rejects_unusable_generation(monkeypatch, response):
-    monkeypatch.setattr(
-        ollama_provider.httpx,
-        "AsyncClient",
-        lambda **_kwargs: StubHTTPClient(response),
-    )
-
-    with pytest.raises(OllamaGenerationError):
-        await make_ollama_provider().generate("Вопрос", system_prompt="Правила")
-
-
-async def test_ollama_request_uses_stable_qwen_rag_profile(monkeypatch):
-    captured: dict = {}
-    response = httpx.Response(
-        200,
-        json={"message": {"content": "Готовый ответ."}},
-        request=httpx.Request("POST", "http://ollama.test/api/chat"),
-    )
-
-    class CapturingHTTPClient(StubHTTPClient):
-        async def post(self, url, **kwargs):
-            captured["url"] = url
-            captured["json"] = kwargs["json"]
-            return self.result
-
-    monkeypatch.setattr(
-        ollama_provider.httpx,
-        "AsyncClient",
-        lambda **_kwargs: CapturingHTTPClient(response),
-    )
-
-    answer = await make_ollama_provider().generate(
-        "Вопрос",
-        system_prompt="Правила",
-        response_format=RAG_ANSWER_JSON_SCHEMA,
-    )
-
-    assert answer == "Готовый ответ."
-    assert captured["json"]["think"] is False
-    assert captured["json"]["options"]["num_ctx"] == 8192
-    assert captured["json"]["format"] == RAG_ANSWER_JSON_SCHEMA
+    monkeypatch.setattr(assistant_catalog_service, "resolve_title_search", no_title)
 
 
 async def test_generate_answer_retries_when_answer_contains_chinese_characters():
@@ -305,6 +211,22 @@ async def test_general_knowledge_answer_uses_separate_disclosed_mode():
     assert service.requests[0][1] == GENERAL_KNOWLEDGE_SYSTEM_PROMPT
     assert "разрешено дать отдельную справку из общих знаний" in service.requests[0][1]
     assert "не создавай вымышленные ссылки" in service.requests[0][1]
+
+
+async def test_followup_rewrite_uses_json_search_contract_and_does_not_request_an_answer():
+    service = StubLLMService(['{"query":"Какие редкие минералы известны в Малом Мурунском массиве?"}'])
+    query = await service.rewrite_followup_query(
+        "А какие редкие минералы там известны?", "Каков возраст Малого Мурунского массива?",
+    )
+    assert "Мурунском" in query
+    assert service.response_formats == [SEARCH_QUERY_JSON_SCHEMA]
+    assert "не отвечай" in service.requests[0][1]
+
+
+@pytest.mark.parametrize("raw", ['{"query":null}', '{"query":[]}', '{}', 'not json'])
+async def test_followup_rewrite_rejects_invalid_model_output(raw):
+    with pytest.raises(LLMGenerationError):
+        await StubLLMService([raw]).rewrite_followup_query("А какие минералы?", "Вопрос")
 
 
 def test_rag_prompt_contains_language_guardrails_and_source_metadata():
@@ -453,6 +375,7 @@ async def test_answer_without_relevant_sources_returns_insufficient_information(
 
     result = await assistant._answer_question(
         question="Что такое фотосинтез?",
+        mode="publications",
         limit=5,
         min_similarity=0.55,
         db=object(),
@@ -514,6 +437,7 @@ async def test_answer_without_reranker_matches_returns_insufficient_information(
 
     result = await assistant._answer_question(
         question="Что происходит при фотосинтезе?",
+        mode="publications",
         limit=5,
         min_similarity=0.55,
         db=object(),
@@ -775,6 +699,7 @@ async def test_answer_allows_insufficient_block_without_sources(monkeypatch):
 
     result = await assistant._answer_question(
         question="В каком году начался магматизм региона?",
+        mode="publications",
         limit=5,
         min_similarity=0.55,
         db=object(),
@@ -1011,7 +936,7 @@ async def test_answer_refuses_plain_text_fallback_without_precise_citations(
     monkeypatch.setattr(assistant, "SemanticSearchRepository", SourceRepository)
     monkeypatch.setattr(assistant, "LocalLLMService", lambda: llm_service)
 
-    with pytest.raises(OllamaGenerationError):
+    with pytest.raises(LLMGenerationError):
         await assistant._answer_question(
             question="Каков возраст магматизма региона?",
             limit=5,
@@ -1064,7 +989,7 @@ def test_answer_sources_are_unique_by_chunk_and_keep_multiple_publication_fragme
         },
     ]
 
-    sources = assistant._build_answer_sources(chunks)
+    sources = build_answer_sources(chunks)
 
     assert [source["publication_id"] for source in sources] == [2, 1, 1, 3]
     assert [source["chunk_id"] for source in sources] == [20, 11, 10, 30]

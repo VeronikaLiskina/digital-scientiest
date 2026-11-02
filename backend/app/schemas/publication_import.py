@@ -15,6 +15,7 @@ class ImportItemRead(BaseModel):
     processing_status: str | None = None
     error_message: str | None = None
     extracted_metadata: ExtractedPublicationMetadataRead | None = None
+    verified_authors: list[str] = Field(default_factory=list)
     title: str | None = None
     title_source: str | None = None
     title_confidence: str | None = None

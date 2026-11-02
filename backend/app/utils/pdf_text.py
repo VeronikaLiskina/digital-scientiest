@@ -45,34 +45,3 @@ def normalize_pdf_text(text: str) -> str:
     text = re.sub(r"[ \t]+", " ", text)
 
     return text.strip()
-
-
-def detect_text_language(text: str, fallback_text: str | None = None) -> str | None:
-    combined_text = f"{text}\n{fallback_text or ''}"
-
-    cyrillic_count = len(re.findall(r"[А-Яа-яЁё]", combined_text))
-    latin_count = len(re.findall(r"[A-Za-z]", combined_text))
-
-    if cyrillic_count == 0 and latin_count == 0:
-        return None
-
-    return "ru" if cyrillic_count > latin_count else "en"
-
-
-def is_text_extraction_bad(text: str) -> bool:
-    """
-    Грубая проверка: pypdf что-то извлек, но это похоже на мусор.
-    """
-
-    if not text.strip():
-        return True
-
-    bad_symbols_count = len(re.findall(r"[�￾]", text))
-    letters_count = len(re.findall(r"[A-Za-zА-Яа-яЁё]", text))
-
-    if letters_count < 50:
-        return True
-
-    if bad_symbols_count > 20:
-        return True
-  

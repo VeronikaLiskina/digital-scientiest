@@ -35,6 +35,8 @@ export function PublicationFormFields({
   const extractedClassName = highlightExtracted
     ? "publication-form__field_review"
     : undefined;
+  const requiredAuthors = authors.filter((author) => author.is_required);
+  const requiredIds = requiredAuthors.map((author) => author.id);
 
   return (
     <div className="publication-form">
@@ -107,7 +109,8 @@ export function PublicationFormFields({
 
       <DictionarySection
         label="Авторы"
-        values={formData.author_ids}
+        values={[...new Set([...formData.author_ids, ...requiredIds])]}
+        lockedValues={requiredIds}
         options={authors.map((author) => ({ id: author.id, label: author.full_name }))}
         onChange={(values) => onChange("author_ids", values)}
         createLabel="Заполните ФИО автора"
@@ -115,6 +118,7 @@ export function PublicationFormFields({
         createButtonText="+ Добавить автора"
         onCreate={onCreateAuthor}
       >
+        {requiredAuthors.length > 0 && <p className="muted">{requiredAuthors.map((author) => author.full_name).join(", ")} автоматически привязывается к каждой публикации каталога.</p>}
         {showExtractedFields && (
           <ExtractedNamesField
             label="Авторы из PDF"
@@ -180,6 +184,7 @@ export function PublicationFormFields({
 type DictionarySectionProps = {
   label: string;
   values: number[];
+  lockedValues?: number[];
   options: { id: number; label: string }[];
   onChange: (values: number[]) => void;
   createLabel: string;
@@ -192,6 +197,7 @@ type DictionarySectionProps = {
 function DictionarySection({
   label,
   values,
+  lockedValues,
   options,
   onChange,
   createLabel,
@@ -205,6 +211,7 @@ function DictionarySection({
       <MultiSelect
         label={label}
         values={values}
+        lockedValues={lockedValues}
         options={options}
         onChange={onChange}
       />

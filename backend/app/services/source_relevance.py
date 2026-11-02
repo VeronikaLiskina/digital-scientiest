@@ -5,8 +5,8 @@ from functools import lru_cache
 import pymorphy3
 
 from app.services.scientific_query_expansion import (
+    build_geochronology_reranker_query,
     contains_geochronology_method_evidence,
-    is_geochronology_method_query,
 )
 
 
@@ -296,7 +296,7 @@ def score_source_relevance(question: str, chunk: dict) -> SourceRelevanceScore:
         and len(matched_specific_tokens) >= 3
     )
     direct_geochronology_method_evidence = bool(
-        is_geochronology_method_query(question)
+        build_geochronology_reranker_query(question) is not None
         and contains_geochronology_method_evidence(source_text)
         and not is_caption
         and matched_specific_tokens
@@ -401,10 +401,6 @@ def explain_source_relevance(question: str, chunk: dict) -> dict[str, object]:
         ),
         "rejection_reasons": reasons if not score.is_relevant else [],
     }
-
-
-def is_relevant_source(question: str, chunk: dict) -> bool:
-    return score_source_relevance(question, chunk).is_relevant
 
 
 def is_cross_language_pair(question: str, source_text: str) -> bool:

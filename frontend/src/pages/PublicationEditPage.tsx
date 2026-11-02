@@ -331,8 +331,9 @@ export function PublicationEditPage() {
 
               {renderMetadataList("Авторы из PDF", extractedMetadata.authors)}
               {renderMetadataList("Темы из PDF", extractedMetadata.topics)}
-              {renderMetadataList("Ключевые слова из PDF", extractedMetadata.keywords)}
+              {renderMetadataList(extractedMetadata.keywords_source === "suggested" ? "Предложенные системой ключевые слова" : "Авторские ключевые слова из PDF", extractedMetadata.keywords)}
               {renderMetadataList("Новые авторы", extractedMetadata.new_authors)}
+              {renderMetadataList("Авторы: требуется ручная проверка", extractedMetadata.unverified_authors)}
               {renderMetadataList("Новые темы", extractedMetadata.new_topics)}
               {renderMetadataList("Новые ключевые слова", extractedMetadata.new_keywords)}
 

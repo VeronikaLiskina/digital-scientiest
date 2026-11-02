@@ -11,7 +11,8 @@ from app.services.assistant_answer_service import (
 )
 from app.services.assistant_chat_service import source_id
 from app.services.assistant_retrieval_service import unique_ranked_chunks
-from app.services.local_llm_service import LLMGenerationError, LocalLLMService
+from app.services.llm.base import LLMGenerationError
+from app.services.local_llm_service import LocalLLMService
 from app.services.prompt_builder import build_rag_context, build_rag_prompt
 
 
@@ -85,7 +86,7 @@ class AssistantGenerationService:
                 "Structured assistant answer rejected on first attempt: %s",
                 first_exc,
             )
-            retry_prompt = self._build_retry_prompt(prompt, first_exc)
+            retry_prompt = self._build_retry_prompt(prompt, first_exc, expected_language=expected_language)
             try:
                 answer_blocks = await self._generate_and_validate(
                     retry_prompt,
@@ -94,6 +95,13 @@ class AssistantGenerationService:
                     allow_bibliography=allow_bibliography,
                 )
             except LLMGenerationError as second_exc:
+                activate = getattr(self.llm_service, "activate_fallback", None)
+                if activate and activate():
+                    logger.warning("API answer failed validation; retrying with local reserve")
+                    return await self.generate(
+                        question=question, expected_language=expected_language,
+                        chunks=chunks, conversation=conversation, detail_percent=detail_percent,
+                    )
                 logger.error(
                     "Structured assistant answer rejected on second attempt: %s; "
                     "refusing to return an answer without precise inline citations",
@@ -150,7 +158,7 @@ class AssistantGenerationService:
         return blocks
 
     @staticmethod
-    def _build_retry_prompt(prompt: str, error: LLMGenerationError) -> str:
+    def _build_retry_prompt(prompt: str, error: LLMGenerationError, *, expected_language: str = "ru") -> str:
         return (
             f"{prompt}\n\n"
             "Предыдущий ответ не прошёл проверку качества: "
@@ -161,5 +169,7 @@ class AssistantGenerationService:
             "кириллицы и латиницы и не перечисляй авторов или литературу, если вопрос "
             "не просит об этом. Делай короткие смысловые блоки и ставь после каждого "
             "только 1–3 source_id, непосредственно подтверждающих его факты. Не нужно "
-            "использовать все источники из контекста."
+            "использовать все источники из контекста. "
+            + ("Write every block's text strictly in English. Preserve only supported facts and valid citations."
+               if expected_language == "en" else "Пиши текст каждого блока строго по-русски.")
         )

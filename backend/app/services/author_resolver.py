@@ -1,4 +1,3 @@
-from dataclasses import dataclass
 import re
 
 from sqlalchemy import select
@@ -9,18 +8,8 @@ from app.utils.normalization import (
     format_author_display_name,
     normalize_author_identity_key,
     normalize_author_name,
+    author_names_match,
 )
-
-
-@dataclass(frozen=True)
-class AuthorMatchResult:
-    extracted_name: str
-    canonical_name: str
-    author: Author | None
-
-    @property
-    def is_existing(self) -> bool:
-        return self.author is not None
 
 
 def _clean_author_input(value: str) -> str:
@@ -114,7 +103,7 @@ def _same_author(left_name: str, right_name: str) -> bool:
     if left_identity and right_identity and left_identity == right_identity:
         return True
 
-    return False
+    return author_names_match(left_name, right_name)
 
 
 async def _find_author_by_exact_key(
@@ -143,11 +132,8 @@ async def _find_author_by_identity_scan(
     result = await db.execute(select(Author))
     authors = result.scalars().all()
 
-    for author in authors:
-        if _same_author(canonical_name, author.full_name):
-            return author
-
-    return None
+    matches = [author for author in authors if _same_author(canonical_name, author.full_name)]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _normalize_existing_author_if_needed(author: Author) -> None:
@@ -219,72 +205,6 @@ async def find_author_by_identity(
         return identity_author
 
     return None
-
-
-async def resolve_author_match(
-    db: AsyncSession,
-    full_name: str,
-) -> AuthorMatchResult | None:
-    """
-    Используется для предпросмотра PDF.
-
-    Ничего не создаёт и не изменяет в БД.
-    Только говорит:
-    - автор уже есть;
-    - или это новый автор.
-    """
-
-    canonical_name = _canonical_author_name(full_name)
-
-    if canonical_name is None:
-        return None
-
-    existing_author = await find_author_by_identity(
-        db=db,
-        full_name=canonical_name,
-        normalize_existing=False,
-    )
-
-    return AuthorMatchResult(
-        extracted_name=full_name,
-        canonical_name=canonical_name,
-        author=existing_author,
-    )
-
-
-async def resolve_author_matches(
-    db: AsyncSession,
-    author_names: list[str],
-) -> list[AuthorMatchResult]:
-    """
-    Массовая проверка авторов из PDF.
-
-    Нужна для /source-files/extract-metadata:
-    - найденных авторов можно сразу отметить в интерфейсе;
-    - новых авторов можно показать в textarea.
-    """
-
-    results: list[AuthorMatchResult] = []
-    seen: set[str] = set()
-
-    for raw_name in author_names:
-        match_result = await resolve_author_match(
-            db=db,
-            full_name=raw_name,
-        )
-
-        if match_result is None:
-            continue
-
-        key = normalize_author_name(match_result.canonical_name)
-
-        if key in seen:
-            continue
-
-        seen.add(key)
-        results.append(match_result)
-
-    return results
 
 
 async def get_or_create_author(

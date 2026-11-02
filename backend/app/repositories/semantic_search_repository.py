@@ -259,8 +259,9 @@ def _log_results(name: str, results: list[dict[str, Any]]) -> None:
 
 
 class SemanticSearchRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, *, publication_ids: tuple[int, ...] | None = None) -> None:
         self.session = session
+        self.publication_ids = publication_ids
 
     async def search_vector_chunks(
         self,
@@ -289,6 +290,8 @@ class SemanticSearchRepository:
             .order_by(distance)
             .limit(search_limit)
         )
+        if self.publication_ids is not None:
+            stmt = stmt.where(DocumentChunk.publication_id.in_(self.publication_ids))
         result = await self.session.execute(stmt)
         vector_results: list[dict[str, Any]] = []
         for row in result.mappings().all():
@@ -397,6 +400,8 @@ class SemanticSearchRepository:
             .order_by(text_score.desc(), DocumentChunk.id)
             .limit(limit)
         )
+        if self.publication_ids is not None:
+            stmt = stmt.where(DocumentChunk.publication_id.in_(self.publication_ids))
         result = await self.session.execute(stmt)
         return [
             {
